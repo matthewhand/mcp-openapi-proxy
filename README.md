@@ -1,5 +1,7 @@
 # mcp-openapi-proxy
 
+[![smithery badge](https://smithery.ai/badge/@matthewhand/mcp-openapi-proxy)](https://smithery.ai/server/@matthewhand/mcp-openapi-proxy)
+
 **mcp-openapi-proxy** is a Python package implementing a Model Context Protocol (MCP) server that dynamically exposes REST APIs defined by OpenAPI specifications as MCP tools. This allows you to easily integrate any OpenAPI-described API into MCP-based workflows.
 
 ## Overview
@@ -18,6 +20,14 @@ The package supports two operation modes:
 - **MCP Integration:** Integrates seamlessly with MCP ecosystems to invoke REST APIs as tools.
 
 ## Installation
+
+### Installing via Smithery
+
+To install OpenAPI Proxy for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@matthewhand/mcp-openapi-proxy):
+
+```bash
+npx -y @smithery/cli install @matthewhand/mcp-openapi-proxy --client claude
+```
 
 ### MCP Ecosystem Integration
 
