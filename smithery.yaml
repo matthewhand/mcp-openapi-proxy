@@ -1,0 +1,29 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - openapiSpecUrl
+    properties:
+      openapiSpecUrl:
+        type: string
+        description: URL to the OpenAPI specification JSON file
+      apiAuthBearer:
+        type: string
+        description: Bearer token for authentication
+      toolWhitelist:
+        type: string
+        description: Comma-separated list of endpoint paths to expose as tools
+      toolNamePrefix:
+        type: string
+        description: Prefix for all tool names
+      openapiSimpleMode:
+        type: boolean
+        description: Enable FastMCP mode
+  commandFunction:
+    # A function that produces the CLI command to start the MCP on stdio.
+    |-
+    (config) => ({ command: 'uvx', args: ['--from', 'git+https://github.com/matthewhand/mcp-openapi-proxy', 'mcp-openapi-proxy'], env: { OPENAPI_SPEC_URL: config.openapiSpecUrl, API_AUTH_BEARER: config.apiAuthBearer || '', TOOL_WHITELIST: config.toolWhitelist || '', TOOL_NAME_PREFIX: config.toolNamePrefix || '', OPENAPI_SIMPLE_MODE: config.openapiSimpleMode ? 'true' : 'false' } })
