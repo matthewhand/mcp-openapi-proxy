@@ -2,6 +2,8 @@
 
 **mcp-openapi-proxy** is a Python package implementing a Model Context Protocol (MCP) server that dynamically exposes REST APIs defined by OpenAPI specifications as MCP tools. This allows you to easily integrate any OpenAPI-described API into MCP-based workflows.
 
+<a href="https://glama.ai/mcp/servers/uxugly3ixf"><img width="380" height="200" src="https://glama.ai/mcp/servers/uxugly3ixf/badge" alt="mcp-any-openapi MCP server" /></a>
+
 ## Overview
 
 The package supports two operation modes:
