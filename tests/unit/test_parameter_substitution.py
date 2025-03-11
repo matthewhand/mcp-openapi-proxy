@@ -58,7 +58,7 @@ class TestParameterSubstitution(unittest.TestCase):
         register_functions(self.dummy_spec)
 
         # Confirm that exactly one tool was registered
-        self.assertEqual(len(tools), 0, "Expected 1 tool to be registered")
+        self.assertEqual(len(tools), 1, "Expected 1 tool to be registered")
 
     def tearDown(self):
         # Restore the original whitelist patch
