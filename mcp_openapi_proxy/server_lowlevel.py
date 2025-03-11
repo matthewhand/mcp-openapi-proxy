@@ -1,8 +1,8 @@
 """
 Low-Level Server for mcp-openapi-proxy.
 
-This server dynamically registers functions (tools) based on an OpenAPI specification,
-directly utilizing the spec for tool definitions and invocation.
+Dynamically registers tools from an OpenAPI spec, adds a prompt to summarize the spec,
+and a resource for the spec itself.
 """
 
 import os
@@ -11,8 +11,7 @@ import asyncio
 import json
 import requests
 from typing import List, Dict, Any
-from mcp import types
-from urllib.parse import unquote
+from mcp.types import Tool, Prompt, Resource, ServerResult, ListToolsResult, CallToolResult, ListPromptsResult, GetPromptResult, ListResourcesResult, ReadResourceResult, ListToolsRequest, CallToolRequest, ListPromptsRequest, GetPromptRequest, ListResourcesRequest, ReadResourceRequest, TextContent
 from mcp.server.lowlevel import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
@@ -21,39 +20,50 @@ from mcp_openapi_proxy.utils import setup_logging, normalize_tool_name, is_tool_
 DEBUG = os.getenv("DEBUG", "").lower() in ("true", "1", "yes")
 logger = setup_logging(debug=DEBUG)
 
-tools: List[types.Tool] = []  # Global tools list
+tools: List[Tool] = []
+prompts: List[Prompt] = [
+    Prompt(
+        name="summarize_spec",
+        description="Summarizes the purpose of the OpenAPI specification",
+        arguments=[],
+        messages=lambda args: [
+            {"role": "assistant", "content": {"type": "text", "text": "This OpenAPI spec defines an API’s endpoints, parameters, and responses, making it a blueprint for devs to build and integrate stuff without messing it up."}}
+        ]
+    )
+]
+resources: List[Resource] = [
+    Resource(
+        name="spec_file",
+        uri="file:///openapi_spec.json",
+        description="The raw OpenAPI specification JSON"
+    )
+]
 openapi_spec_data = None
 
 mcp = Server("OpenApiProxy-LowLevel")
 
-async def dispatcher_handler(request: types.CallToolRequest) -> types.ServerResult:
-    """Dispatcher handler that routes CallToolRequest to the appropriate function (tool)."""
+async def dispatcher_handler(request: CallToolRequest) -> ServerResult:
     global openapi_spec_data
     try:
         function_name = request.params.name
         logger.debug(f"Dispatcher received CallToolRequest for function: {function_name}")
-        logger.debug(f"API_KEY: {os.getenv('API_KEY', '<not set>')[:5] + '...' if os.getenv('API_KEY') else '<not set>'}")
-        logger.debug(f"STRIP_PARAM: {os.getenv('STRIP_PARAM', '<not set>')}")
         tool = next((tool for tool in tools if tool.name == function_name), None)
         if not tool:
             logger.error(f"Unknown function requested: {function_name}")
-            return types.ServerResult(
-                root=types.CallToolResult(
-                    content=[types.TextContent(type="text", text="Unknown function requested")]
+            return ServerResult(
+                root=CallToolResult(
+                    content=[TextContent(type="text", text="Unknown function requested")]
                 )
             )
         arguments = request.params.arguments or {}
-        logger.debug(f"Raw arguments before processing: {arguments}")
-
         operation_details = lookup_operation_details(function_name, openapi_spec_data)
         if not operation_details:
             logger.error(f"Could not find OpenAPI operation for function: {function_name}")
-            return types.ServerResult(
-                root=types.CallToolResult(
-                    content=[types.TextContent(type="text", text=f"Could not find OpenAPI operation for function: {function_name}")]
+            return ServerResult(
+                root=CallToolResult(
+                    content=[TextContent(type="text", text=f"Could not find OpenAPI operation for function: {function_name}")]
                 )
             )
-
         operation = operation_details['operation']
         operation['method'] = operation_details['method']
         headers = handle_auth(operation)
@@ -61,29 +71,23 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.ServerResu
         method = operation_details['method']
         if method != "GET":
             headers["Content-Type"] = "application/json"
-
         path = operation_details['path']
-
         base_url = build_base_url(openapi_spec_data)
         if not base_url:
             logger.critical("Failed to construct base URL from spec or SERVER_URL_OVERRIDE.")
-            return types.ServerResult(
-                root=types.CallToolResult(
-                    content=[types.TextContent(type="text", text="No base URL defined in spec or SERVER_URL_OVERRIDE")]
+            return ServerResult(
+                root=CallToolResult(
+                    content=[TextContent(type="text", text="No base URL defined in spec or SERVER_URL_OVERRIDE")]
                 )
             )
-
         api_url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
         request_params = {}
         request_body = None
-
         if isinstance(parameters, dict):
             merged_params = []
-            # Get any path-level parameters from the spec
             path_item = openapi_spec_data.get("paths", {}).get(path, {})
             if isinstance(path_item, dict) and "parameters" in path_item:
                 merged_params.extend(path_item["parameters"])
-            # Add operation-level parameters
             if "parameters" in operation:
                 merged_params.extend(operation["parameters"])
             path_params_in_openapi = [param["name"] for param in merged_params if param.get("in") == "path"]
@@ -94,9 +98,9 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.ServerResu
                 ]
                 if missing_required:
                     logger.error(f"Missing required path parameters: {missing_required}")
-                    return types.ServerResult(
-                        root=types.CallToolResult(
-                            content=[types.TextContent(type="text", text=f"Missing required path parameters: {missing_required}")]
+                    return ServerResult(
+                        root=CallToolResult(
+                            content=[TextContent(type="text", text=f"Missing required path parameters: {missing_required}")]
                         )
                     )
                 for param_name in path_params_in_openapi:
@@ -111,12 +115,6 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.ServerResu
                 request_body = parameters
         else:
             logger.debug("No valid parameters provided, proceeding without params/body")
-
-        logger.debug(f"API Request - URL: {api_url}, Method: {method}")
-        logger.debug(f"Headers: {headers}")
-        logger.debug(f"Query Params: {request_params}")
-        logger.debug(f"Request Body: {request_body}")
-
         try:
             response = requests.request(
                 method=method,
@@ -129,59 +127,116 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.ServerResu
             response_text = response.text or "No response body"
             content, log_message = detect_response_type(response_text)
             logger.debug(log_message)
-            final_content = [content]
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API request failed: {e}")
-            return types.ServerResult(
-                root=types.CallToolResult(
-                    content=[types.TextContent(type="text", text=str(e))]
+            return ServerResult(
+                root=CallToolResult(
+                    content=[content]
                 )
             )
+        except requests.exceptions.RequestException as e:
+            logger.error(f"API request failed: {e}")
+            return ServerResult(
+                root=CallToolResult(
+                    content=[TextContent(type="text", text=str(e))]
+                )
+            )
+    except Exception as e:
+        logger.error(f"Unhandled exception in dispatcher_handler: {e}", exc_info=True)
+        return ServerResult(
+            root=CallToolResult(
+                content=[TextContent(type="text", text=f"Internal error: {str(e)}")]
+            )
+        )
 
-        logger.debug(f"Response content type: {content.type}")
-        logger.debug(f"Response sent to client: {content.text}")
+async def list_tools(request: ListToolsRequest) -> ServerResult:
+    logger.debug("Handling list_tools request")
+    logger.debug(f"Tools list length: {len(tools)}")
+    return ServerResult(root=ListToolsResult(tools=tools))
 
-        return types.ServerResult(
-            root=types.CallToolResult(
-                content=final_content
+async def list_prompts(request: ListPromptsRequest) -> ServerResult:
+    logger.debug("Handling list_prompts request")
+    logger.debug(f"Prompts list length: {len(prompts)}")
+    return ServerResult(root=ListPromptsResult(prompts=prompts))
+
+async def get_prompt(request: GetPromptRequest) -> ServerResult:
+    logger.debug(f"Handling get_prompt request for {request.params.name}")
+    prompt = next((p for p in prompts if p.name == request.params.name), None)
+    if not prompt:
+        logger.error(f"Prompt '{request.params.name}' not found")
+        return ServerResult(
+            root=GetPromptResult(
+                messages=[{"role": "system", "content": {"type": "text", "text": "Prompt not found"}}]
+            )
+        )
+    try:
+        messages = prompt.messages(request.params.arguments or {})
+        logger.debug(f"Generated messages: {messages}")
+        return ServerResult(root=GetPromptResult(messages=messages))
+    except Exception as e:
+        logger.error(f"Error generating prompt: {e}", exc_info=True)
+        return ServerResult(
+            root=GetPromptResult(
+                messages=[{"role": "system", "content": {"type": "text", "text": f"Prompt error: {str(e)}"}}]
+            )
+        )
+
+async def list_resources(request: ListResourcesRequest) -> ServerResult:
+    logger.debug("Handling list_resources request")
+    logger.debug(f"Resources list length: {len(resources)}")
+    return ServerResult(
+        root=ListResourcesResult(
+            resources=resources,
+            resourceTemplates=[]
+        )
+    )
+
+async def read_resource(request: ReadResourceRequest) -> ServerResult:
+    logger.debug(f"Handling read_resource request for {request.params.uri}")
+    global openapi_spec_data
+    resource = next((r for r in resources if r.uri == request.params.uri), None)
+    if not resource or request.params.uri != "file:///openapi_spec.json":
+        logger.error(f"Resource '{request.params.uri}' not found")
+        return ServerResult(
+            root=ReadResourceResult(
+                contents=[{"type": "text", "content": "Resource not found"}]
+            )
+        )
+    try:
+        if not openapi_spec_data:
+            logger.error("OpenAPI spec data not loaded")
+            return ServerResult(
+                root=ReadResourceResult(
+                    contents=[{"type": "text", "content": "Spec data unavailable"}]
+                )
+            )
+        spec_json = json.dumps(openapi_spec_data, indent=2)
+        logger.debug(f"Serving spec JSON: {spec_json[:50]}...")
+        return ServerResult(
+            root=ReadResourceResult(
+                contents=[{"type": "text", "content": spec_json}]
             )
         )
     except Exception as e:
-        logger.error(f"Unhandled exception in dispatcher_handler: {e}", exc_info=True)
-        return types.ServerResult(
-            root=types.CallToolResult(
-                content=[types.TextContent(type="text", text=f"Internal error: {str(e)}")]
+        logger.error(f"Error reading resource: {e}", exc_info=True)
+        return ServerResult(
+            root=ReadResourceResult(
+                contents=[{"type": "text", "content": f"Resource error: {str(e)}"}]
             )
         )
 
-async def list_tools(request: types.ListToolsRequest) -> types.ServerResult:
-    logger.debug("Handling list_tools request - start")
-    logger.debug(f"Tools list length: {len(tools)}")
-    result = types.ServerResult(root=types.ListToolsResult(tools=tools))
-    logger.debug("list_tools result prepared")
-    sys.stderr.flush()
-    return result
-
-def register_functions(spec: Dict) -> List[types.Tool]:
-    """Register tools from OpenAPI spec, preserving across calls if already populated."""
+def register_functions(spec: Dict) -> List[Tool]:
+    """Register tools from OpenAPI spec."""
     global tools, openapi_spec_data
-    # Assign spec to global variable for later lookup
     openapi_spec_data = spec
-    # Always re-register tools for each spec
-    logger.debug("Clearing previously registered tools to allow re-registration")
+    logger.debug("Clearing previously registered tools")
     tools.clear()
-    tools = []
-    if not spec:
-        logger.error("OpenAPI spec is None or empty.")
+    if not spec or 'paths' not in spec:
+        logger.error("No valid paths in OpenAPI spec.")
         return tools
-    if 'paths' not in spec:
-        logger.error("No 'paths' key in OpenAPI spec.")
-        return tools
-    logger.debug(f"Spec paths available: {list(spec['paths'].keys())}")
+    logger.debug(f"Spec paths: {list(spec['paths'].keys())}")
     filtered_paths = {path: item for path, item in spec['paths'].items() if is_tool_whitelisted(path)}
     logger.debug(f"Filtered paths: {list(filtered_paths.keys())}")
     if not filtered_paths:
-        logger.warning("No whitelisted paths found in OpenAPI spec after filtering.")
+        logger.warning("No whitelisted paths found in OpenAPI spec.")
         return tools
     for path, path_item in filtered_paths.items():
         if not path_item:
@@ -214,13 +269,14 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                         }
                         if param.get('required', False):
                             input_schema['required'].append(param_name)
-                tool = types.Tool(
+                tool = Tool(
                     name=function_name,
                     description=description,
                     inputSchema=input_schema,
+                    handler=lambda arguments: handle_request(method, path, arguments)
                 )
                 tools.append(tool)
-                logger.debug(f"Registered function: {function_name} ({method.upper()} {path}) with inputSchema: {json.dumps(input_schema)}")
+                logger.debug(f"Registered function: {function_name}")
             except Exception as e:
                 logger.error(f"Error registering function for {method.upper()} {path}: {e}", exc_info=True)
     logger.info(f"Registered {len(tools)} functions from OpenAPI spec.")
@@ -248,7 +304,11 @@ async def start_server():
             initialization_options=InitializationOptions(
                 server_name="AnyOpenAPIMCP-LowLevel",
                 server_version="0.1.0",
-                capabilities=types.ServerCapabilities(),
+                capabilities=types.ServerCapabilities(
+                    tools=types.ToolsCapabilities(listChanged=True),
+                    prompts=types.PromptsCapabilities(listChanged=True),
+                    resources=types.ResourcesCapabilities(listChanged=True)
+                ),
             ),
         )
 
@@ -270,9 +330,13 @@ def run_server():
         if not tools:
             logger.critical("No valid tools registered. Shutting down.")
             sys.exit(1)
-        mcp.request_handlers[types.ListToolsRequest] = list_tools
-        mcp.request_handlers[types.CallToolRequest] = dispatcher_handler
-        logger.debug("Handlers registered.")
+        mcp.request_handlers[ListToolsRequest] = list_tools
+        mcp.request_handlers[CallToolRequest] = dispatcher_handler
+        mcp.request_handlers[ListPromptsRequest] = list_prompts
+        mcp.request_handlers[GetPromptRequest] = get_prompt
+        mcp.request_handlers[ListResourcesRequest] = list_resources
+        mcp.request_handlers[ReadResourceRequest] = read_resource
+        logger.debug("All handlers registered.")
         asyncio.run(start_server())
     except KeyboardInterrupt:
         logger.debug("MCP server shutdown initiated by user.")
