@@ -11,8 +11,7 @@ import asyncio
 import json
 import requests
 from typing import List, Dict, Any
-from mcp import types
-from mcp.types import Tool, Prompt, Resource, ServerResult, ListToolsResult, CallToolResult, ListPromptsResult, GetPromptResult, ListResourcesResult, ReadResourceResult, ListToolsRequest, CallToolRequest, ListPromptsRequest, GetPromptRequest, ListResourcesRequest, ReadResourceRequest, TextContent
+from mcp.types import Tool, Prompt, Resource, ServerResult, ListToolsResult, CallToolResult, ListPromptsResult, GetPromptResult, ListResourcesResult, ReadResourceResult, ListToolsRequest, CallToolRequest, ListPromptsRequest, GetPromptRequest, ListResourcesRequest, ReadResourceRequest, TextContent, ServerCapabilities, ToolsCapability, PromptsCapability, ResourcesCapability
 from mcp.server.lowlevel import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
@@ -305,10 +304,10 @@ async def start_server():
             initialization_options=InitializationOptions(
                 server_name="AnyOpenAPIMCP-LowLevel",
                 server_version="0.1.0",
-                capabilities=types.ServerCapabilities(
-                    tools=types.ToolsCapability(listChanged=True),
-                    prompts=types.PromptsCapability(listChanged=True),
-                    resources=types.ResourcesCapability(listChanged=True)
+                capabilities=ServerCapabilities(
+                    tools=ToolsCapability(listChanged=True),
+                    prompts=PromptsCapability(listChanged=True),
+                    resources=ResourcesCapability(listChanged=True)
                 ),
             ),
         )
