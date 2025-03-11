@@ -306,9 +306,9 @@ async def start_server():
                 server_name="AnyOpenAPIMCP-LowLevel",
                 server_version="0.1.0",
                 capabilities=types.ServerCapabilities(
-                    tools=types.ToolsCapabilities(listChanged=True),
-                    prompts=types.PromptsCapabilities(listChanged=True),
-                    resources=types.ResourcesCapabilities(listChanged=True)
+                    tools=types.ToolsCapability(listChanged=True),
+                    prompts=types.PromptsCapability(listChanged=True),
+                    resources=types.ResourcesCapability(listChanged=True)
                 ),
             ),
         )
