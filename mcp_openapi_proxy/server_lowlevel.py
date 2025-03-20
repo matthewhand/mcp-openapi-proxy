@@ -15,7 +15,7 @@ from mcp.types import Tool, Prompt, Resource, ServerResult, ListToolsResult, Cal
 from mcp.server.lowlevel import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
-from mcp_openapi_proxy.utils import setup_logging, normalize_tool_name, is_tool_whitelisted, fetch_openapi_spec, build_base_url, handle_auth, strip_parameters, detect_response_type
+from mcp_openapi_proxy.utils import setup_logging, normalize_tool_name, is_tool_whitelisted, fetch_openapi_spec, build_base_url, handle_auth, strip_parameters, detect_response_type, get_additional_headers
 
 DEBUG = os.getenv("DEBUG", "").lower() in ("true", "1", "yes")
 logger = setup_logging(debug=DEBUG)
@@ -67,6 +67,8 @@ async def dispatcher_handler(request: CallToolRequest) -> ServerResult:
         operation = operation_details['operation']
         operation['method'] = operation_details['method']
         headers = handle_auth(operation)
+        additional_headers = get_additional_headers()  # Yer precious extra headers
+        headers = {**headers, **additional_headers}
         parameters = strip_parameters(arguments)
         method = operation_details['method']
         if method != "GET":
@@ -150,7 +152,10 @@ async def dispatcher_handler(request: CallToolRequest) -> ServerResult:
 async def list_tools(request: ListToolsRequest) -> ServerResult:
     logger.debug("Handling list_tools request")
     logger.debug(f"Tools list length: {len(tools)}")
-    return ServerResult(root=ListToolsResult(tools=tools))
+    result = ServerResult(root=ListToolsResult(tools=tools))
+    logger.debug("list_tools result prepared")
+    sys.stderr.flush()
+    return result
 
 async def list_prompts(request: ListPromptsRequest) -> ServerResult:
     logger.debug("Handling list_prompts request")
@@ -332,10 +337,10 @@ def run_server():
             sys.exit(1)
         mcp.request_handlers[ListToolsRequest] = list_tools
         mcp.request_handlers[CallToolRequest] = dispatcher_handler
-        # mcp.request_handlers[ListPromptsRequest] = list_prompts
-        # mcp.request_handlers[GetPromptRequest] = get_prompt
-        # mcp.request_handlers[ListResourcesRequest] = list_resources
-        # mcp.request_handlers[ReadResourceRequest] = read_resource
+        mcp.request_handlers[ListPromptsRequest] = list_prompts
+        mcp.request_handlers[GetPromptRequest] = get_prompt
+        mcp.request_handlers[ListResourcesRequest] = list_resources
+        mcp.request_handlers[ReadResourceRequest] = read_resource
         logger.debug("All handlers registered.")
         asyncio.run(start_server())
     except KeyboardInterrupt:

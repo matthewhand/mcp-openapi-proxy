@@ -234,3 +234,24 @@ def build_base_url(spec: dict) -> str:
         return base_url.rstrip('/')
     logger.critical("No servers or host defined in OpenAPI spec, and no SERVER_URL_OVERRIDE set.")
     return ""
+
+def get_additional_headers():
+    """
+    Reads the EXTRA_HEADERS environment variable and parses it into a dictionary.
+    Each header should be on a separate line in the format:
+        Header-Name: Value
+    Returns:
+        A dictionary of header key-value pairs.
+    """
+    headers_str = os.getenv("EXTRA_HEADERS")
+    if not headers_str:
+        return {}
+    headers = {}
+    for line in headers_str.splitlines():
+        if ":" in line:
+            key, value = line.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            if key and value:
+                headers[key] = value
+    return headers
