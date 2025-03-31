@@ -23,6 +23,8 @@
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
+<a href="https://glama.ai/mcp/servers/uxugly3ixf"><img width="380" height="200" src="https://glama.ai/mcp/servers/uxugly3ixf/badge" alt="mcp-any-openapi MCP server" /></a>
+
 ## Overview
 
 The package offers two operational modes:
