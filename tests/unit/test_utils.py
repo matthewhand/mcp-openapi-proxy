@@ -30,7 +30,8 @@ def test_normalize_tool_name():
 def test_detect_response_type_json():
     content, msg = detect_response_type('{"key": "value"}')
     assert content.type == "text"
-    assert content.text == '{"text": "{\\"key\\": \\"value\\"}"}'
+    # New behavior: should return the decoded JSON, not a wrapped string
+    assert content.text == '{"key": "value"}'
     assert "JSON" in msg
 
 def test_detect_response_type_text():

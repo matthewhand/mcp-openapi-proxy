@@ -211,16 +211,25 @@ def strip_parameters(parameters: Dict) -> Dict:
 
 def detect_response_type(response_text: str) -> Tuple[types.TextContent, str]:
     """Determine response type based on JSON validity.
-    If response_text is valid JSON, return a wrapped JSON string;
-    otherwise, return the plain text.
+    If response_text is valid JSON (even if it's double-encoded), decode it to return the actual content.
+    Otherwise, return the plain text.
     """
+    import json
     try:
-        json.loads(response_text)
-        wrapped_text = json.dumps({"text": response_text})
-        # Remove id=None as it's not a valid parameter for mcp.types.TextContent
-        return types.TextContent(type="text", text=wrapped_text), "JSON response"
-    except json.JSONDecodeError:
-         # Remove id=None as it's not a valid parameter for mcp.types.TextContent
+        # Try decoding once
+        decoded = json.loads(response_text)
+        # If it's a dict with a 'text' key that's also JSON, decode again
+        if isinstance(decoded, dict) and 'text' in decoded:
+            try:
+                inner_decoded = json.loads(decoded['text'])
+                return types.TextContent(type="text", text=json.dumps(inner_decoded)), "Double-decoded JSON response"
+            except Exception:
+                # If inner is not JSON, just return as is
+                return types.TextContent(type="text", text=decoded['text']), "Single-decoded JSON response (dict with text)"
+        # If it's not a dict with 'text', just return the decoded object as JSON string
+        return types.TextContent(type="text", text=json.dumps(decoded)), "Single-decoded JSON response"
+    except Exception:
+        # Not JSON at all
         return types.TextContent(type="text", text=response_text.strip()), "non-JSON text"
 
 def get_additional_headers() -> Dict[str, str]:
