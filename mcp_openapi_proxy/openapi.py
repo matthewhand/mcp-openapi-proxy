@@ -29,8 +29,9 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                 # Check IGNORE_SSL_SPEC env var
                 ignore_ssl_spec = os.getenv("IGNORE_SSL_SPEC", "false").lower() in ("true", "1", "yes")
                 verify_ssl_spec = not ignore_ssl_spec
+                headers = handle_auth({"method": "GET"})
                 logger.debug(f"Fetching spec with SSL verification: {verify_ssl_spec} (IGNORE_SSL_SPEC={ignore_ssl_spec})")
-                response = requests.get(url, timeout=10, verify=verify_ssl_spec)
+                response = requests.get(url, headers=headers, timeout=10, verify=verify_ssl_spec)
                 response.raise_for_status()
                 content = response.text
             logger.debug(f"Fetched content length: {len(content)} bytes")
