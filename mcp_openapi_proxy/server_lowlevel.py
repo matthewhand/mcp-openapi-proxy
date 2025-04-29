@@ -193,12 +193,16 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
         logger.debug(f"Request Body: {request_body}")
 
         try:
+            ignore_ssl_tools = os.getenv("IGNORE_SSL_TOOLS", "false").lower() in ("true", "1", "yes")
+            verify_ssl_tools = not ignore_ssl_tools
+            logger.debug(f"Sending API request with SSL verification: {verify_ssl_tools} (IGNORE_SSL_TOOLS={ignore_ssl_tools})")
             response = requests.request(
                 method=method,
                 url=api_url,
                 headers=headers,
                 params=request_params if method == "GET" else None,
                 json=request_body if method != "GET" else None,
+                verify=verify_ssl_tools,
             )
             response.raise_for_status()
             response_text = (response.text or "No response body").strip()
