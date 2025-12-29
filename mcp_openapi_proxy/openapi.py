@@ -13,15 +13,19 @@ from mcp import types
 from mcp_openapi_proxy.utils import normalize_tool_name
 from .logging_setup import logger
 
+import prance
+from prance.util.resolver import RESOLVE_INTERNAL
+
 # Define the required tool name pattern
 TOOL_NAME_REGEX = r"^[a-zA-Z0-9_-]{1,64}$"
 
 def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
-    """Fetch and parse an OpenAPI specification from a URL with retries."""
+    """Fetch and parse an OpenAPI specification from a URL with retries and full reference resolution."""
     logger.debug(f"Fetching OpenAPI spec from URL: {url}")
     attempt = 0
     while attempt < retries:
         try:
+            content = None
             if url.startswith("file://"):
                 with open(url[7:], "r") as f:
                     content = f.read()
@@ -33,32 +37,49 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                 response = requests.get(url, timeout=10, verify=verify_ssl_spec)
                 response.raise_for_status()
                 content = response.text
-            logger.debug(f"Fetched content length: {len(content)} bytes")
+            
+            logger.debug(f"Fetched content length: {len(content) if content else 0} bytes")
+            
+            if not content:
+                logger.error("Fetched content is empty")
+                return None
+
             try:
-                spec = json.loads(content)
-                logger.debug(f"Parsed as JSON from {url}")
-            except json.JSONDecodeError:
-                try:
-                    spec = yaml.safe_load(content)
-                    logger.debug(f"Parsed as YAML from {url}")
-                except yaml.YAMLError as ye:
-                    logger.error(f"YAML parsing failed: {ye}. Raw content: {content[:500]}...")
-                    return None
-            return spec
-        except requests.RequestException as e:
+                # Use prance to parse and resolve references
+                logger.debug(f"Parsing and resolving spec from {url} using prance")
+                parser = prance.ResolvingParser(
+                    spec_string=content,
+                    resolve_types=RESOLVE_INTERNAL, 
+                    backend='openapi-spec-validator'
+                )
+                spec = parser.specification
+                logger.debug(f"Successfully parsed and resolved spec from {url}")
+                return spec
+
+            except Exception as e:
+                # Fallback or specific error handling for parsing failures
+                logger.error(f"Prance parsing/resolution failed: {e}")
+                # We could try a fallback to simple loading if strict validation fails, 
+                # but the user specifically wants resolution, so failing might be better.
+                # However, let's log and return None to trigger retry or failure.
+                # If it's a validation error, retrying the fetch won't help. 
+                # But the outer loop retries on 'Exception'. 
+                # Let's let the outer loop handle it, but maybe we should break if it's a parsing error?
+                # For now, treat it as a failure.
+                raise e 
+
+        except (requests.RequestException, FileNotFoundError) as e:
             attempt += 1
             logger.warning(f"Fetch attempt {attempt}/{retries} failed: {e}")
             if attempt == retries:
                 logger.error(f"Failed to fetch spec from {url} after {retries} attempts: {e}")
                 return None
-        except FileNotFoundError as e:
-             logger.error(f"Failed to open local file spec {url}: {e}")
-             return None
         except Exception as e:
+             # This catches the prance errors too
              attempt += 1
-             logger.warning(f"Unexpected error during fetch attempt {attempt}/{retries}: {e}")
+             logger.warning(f"Error during fetch/parse attempt {attempt}/{retries}: {e}")
              if attempt == retries:
-                 logger.error(f"Failed to process spec from {url} after {retries} attempts due to unexpected error: {e}")
+                 logger.error(f"Failed to process spec from {url} after {retries} attempts: {e}")
                  return None
     return None
 
