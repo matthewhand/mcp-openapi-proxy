@@ -630,12 +630,15 @@ This exposes tools like `get_wp_v2_posts`, `post_wp_v2_posts`, `get_wp_v2_posts_
 
 Notes:
 
-- WordPress uses HTTP Basic auth with Application Passwords; `EXTRA_HEADERS` injects the `Authorization: Basic ...` header directly (`API_AUTH_TYPE: Basic` is not yet implemented).
-- If your host has a self-signed or mismatched TLS certificate (common on free hosting), set `IGNORE_SSL_TOOLS: "true"`.
-- Some shared hosts strip the `Authorization` header before it reaches PHP. If authenticated calls return `rest_not_logged_in`, add the following to your WordPress `.htaccess`:
-  ```
-  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
-  ```
+- WordPress uses HTTP Basic auth with Application Passwords; `EXTRA_HEADERS` injects the `Authorization: Basic ...` header directly (`API_AUTH_TYPE: Basic` is not yet implemented). A login password will **not** work — REST only accepts Application Passwords.
+- If your host has a self-signed or mismatched TLS certificate (common on free/shared hosting, where the cert is for the hosting box, not your domain), set `IGNORE_SSL_TOOLS: "true"`.
+- **"Application password feature requires HTTPS" even over https?** Shared hosts terminate TLS at a proxy and forward http to WordPress, so `is_ssl()` is false and app passwords are disabled. See the shared-hosting gist below for a one-file plugin that fixes it.
+- On nginx/php-fpm (FastCGI) hosts the `Authorization` header may not reach PHP — forward it with `fastcgi_param HTTP_AUTHORIZATION $http_authorization;` (or the `.htaccess` equivalent `RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]` on Apache-CGI). Not needed under Apache mod_php.
+
+Further reading (full walkthroughs, tested end-to-end):
+
+- [WordPress on AwardSpace / shared hosting](https://gist.github.com/matthewhand/9420021fc8b8865c401fac6f2535ec7c) — the HTTPS-proxy app-password fix, app-password vs login password, and mismatched-cert handling.
+- [Local WordPress via Docker Compose](https://gist.github.com/matthewhand/66a682c6ae8cd0fc16b8d3601653db60) — a throwaway WordPress for testing list/create/update locally.
 
 ## Troubleshooting
 
