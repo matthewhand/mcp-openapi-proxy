@@ -15,7 +15,6 @@
 - [Examples](#examples)
   - [Glama Example](#glama-example)
   - [Fly.io Example](#flyio-example)
-  - [Render Example](#render-example)
   - [Slack Example](#slack-example)
   - [GetZep Example](#getzep-example)
   - [Virustotal Example](#virustotal-example)
@@ -196,52 +195,6 @@ Update your MCP ecosystem configuration:
 #### 3. Testing
 
 After starting the service refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
-
-### Render Example
-
-![image](https://github.com/user-attachments/assets/f1dee1bf-e330-41f1-a700-6386edd8895e)
-
-Render offers infrastructure hosting that can be managed via an API. The provided configuration file `examples/render-claude_desktop_config.json` demonstrates how to set up your MCP ecosystem quickly with minimal settings.
-
-#### 1. Verify the OpenAPI Specification
-
-Retrieve the Render OpenAPI specification:
-
-```bash
-curl https://api-docs.render.com/openapi/6140fb3daeae351056086186
-```
-
-Ensure the response is a valid OpenAPI document.
-
-#### 2. Configure mcp-openapi-proxy for Render
-
-Add the following configuration to your MCP ecosystem settings:
-
-```json
-{
-    "mcpServers": {
-        "render": {
-            "command": "uvx",
-            "args": ["mcp-openapi-proxy"],
-            "env": {
-                "OPENAPI_SPEC_URL": "https://api-docs.render.com/openapi/6140fb3daeae351056086186",
-                "TOOL_WHITELIST": "/services,/maintenance",
-                "API_KEY": "your_render_token_here"
-            }
-        }
-    }
-}
-```
-
-#### 3. Testing
-
-Launch the proxy with your Render configuration:
-
-```bash
-OPENAPI_SPEC_URL="https://api-docs.render.com/openapi/6140fb3daeae351056086186" TOOL_WHITELIST="/services,/maintenance" API_KEY="your_render_token_here" uvx mcp-openapi-proxy
-```
-
-Then refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
 
 ### Slack Example
 
