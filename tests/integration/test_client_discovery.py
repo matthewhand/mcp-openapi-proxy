@@ -104,6 +104,32 @@ def server(tmp_path):
             proc.kill()
 
 
+@pytest.fixture
+def simple_server(tmp_path):
+    """FastMCP (simple) mode permutation."""
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(SPEC))
+    env = dict(os.environ)
+    env.update({
+        "OPENAPI_SPEC_URL": spec_path.as_uri(),
+        "OPENAPI_SIMPLE_MODE": "true",
+        "DEBUG": "false",
+    })
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "from mcp_openapi_proxy import main; main()"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        env=env, text=True,
+    )
+    try:
+        yield proc
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+
+
 def _initialize(client):
     resp = client.request("initialize", {
         "protocolVersion": "2024-11-05",
@@ -152,3 +178,15 @@ def test_get_prompt_returns_valid_messages(server):
     messages = resp["result"]["messages"]
     assert messages and messages[0]["role"] in ("assistant", "user")
     assert messages[0]["content"]["type"] == "text"
+
+
+def test_simple_mode_tools_discoverable(simple_server):
+    """FastMCP (simple) mode permutation: a strict client can still initialize
+    and discover the static tools."""
+    client = StdioClient(simple_server)
+    result = _initialize(client)
+    assert result.get("capabilities", {}).get("tools") is not None
+    tools = client.request("tools/list")
+    assert "result" in tools, f"tools/list errored: {tools}"
+    names = [t["name"] for t in tools["result"]["tools"]]
+    assert "list_functions" in names and "call_function" in names, names

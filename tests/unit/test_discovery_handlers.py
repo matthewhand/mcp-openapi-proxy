@@ -78,6 +78,25 @@ async def test_get_prompt_known_template():
         s.PROMPT_TEMPLATES.pop("unit_test_prompt", None)
 
 
+@pytest.mark.asyncio
+async def test_enabled_but_empty_is_graceful(monkeypatch):
+    """Enabling resources/prompts when none are defined must not error: the
+    list handlers return valid empty results and get_prompt reports not-found
+    cleanly. (Confirms enabling-by-default is safe with an empty spec.)"""
+    monkeypatch.setattr(s, "prompts", [])
+    monkeypatch.setattr(s, "PROMPT_TEMPLATES", {})
+
+    lp = await list_prompts(SimpleNamespace(params=SimpleNamespace()))
+    assert isinstance(lp, types.ListPromptsResult)
+    assert lp.prompts == []
+    lp.model_dump_json()
+
+    gp = await get_prompt(SimpleNamespace(params=SimpleNamespace(name="anything", arguments={})))
+    assert isinstance(gp, types.GetPromptResult)
+    assert gp.messages and isinstance(gp.messages[0].content, types.TextContent)
+    gp.model_dump_json()
+
+
 def test_capabilities_advertise_tools_by_default():
     """Regression: capabilities were gated on CAPABILITIES_* (default false), so a
     server WITH tools advertised an empty capability set and strict clients saw none."""
