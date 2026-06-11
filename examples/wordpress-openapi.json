@@ -1,0 +1,81 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "WordPress REST API (posts subset)",
+    "version": "1.0.0",
+    "description": "Minimal spec exposing WordPress posts list/create/update via mcp-openapi-proxy"
+  },
+  "servers": [
+    { "url": "https://YOUR-WORDPRESS-SITE/wp-json", "description": "Placeholder - set SERVER_URL_OVERRIDE env var to your site's /wp-json base" }
+  ],
+  "paths": {
+    "/wp/v2/posts": {
+      "get": {
+        "operationId": "list_posts",
+        "summary": "List posts",
+        "parameters": [
+          { "name": "per_page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Array of posts" } }
+      },
+      "post": {
+        "operationId": "create_post",
+        "summary": "Create a post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "content": { "type": "string" },
+                  "status": { "type": "string", "enum": ["draft", "publish", "pending", "private"] },
+                  "excerpt": { "type": "string" }
+                },
+                "required": ["title", "content"]
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created post" } }
+      }
+    },
+    "/wp/v2/posts/{id}": {
+      "get": {
+        "operationId": "get_post",
+        "summary": "Get a single post",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Post" } }
+      },
+      "post": {
+        "operationId": "update_post",
+        "summary": "Update a post (WP accepts POST for updates)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "content": { "type": "string" },
+                  "status": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Updated post" } }
+      }
+    }
+  }
+}

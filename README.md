@@ -642,6 +642,48 @@ You can integrate the WolframAlpha API using your own App ID for authenticated a
 
 You can now use the MCP ecosystem to list and invoke WolframAlpha API tools. For integration tests, see `tests/integration/test_wolframalpha_integration.py`.
 
+### WordPress Example
+
+Manage WordPress posts (list, create, update) via the [WordPress REST API](https://developer.wordpress.org/rest-api/). Proven against a stock WordPress install on AwardSpace free hosting, so it works even on budget/free shared hosting. A minimal posts-only OpenAPI spec is provided at [examples/wordpress-openapi.json](examples/wordpress-openapi.json) — the spec is site-agnostic; point it at your site with `SERVER_URL_OVERRIDE` so nothing site-specific is hardcoded.
+
+#### 1. Create a WordPress Application Password
+
+In wp-admin go to **Users → Profile → Application Passwords**, create one, and base64-encode `username:application_password` (strip spaces from the password):
+
+```bash
+echo -n 'myuser:abcd1234efgh5678' | base64
+```
+
+#### 2. Configure mcp-openapi-proxy for WordPress
+
+```json
+{
+    "mcpServers": {
+        "wordpress": {
+            "command": "uvx",
+            "args": ["mcp-openapi-proxy"],
+            "env": {
+                "OPENAPI_SPEC_URL": "https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/main/examples/wordpress-openapi.json",
+                "SERVER_URL_OVERRIDE": "https://your-site.example.com/wp-json",
+                "EXTRA_HEADERS": "Authorization: Basic BASE64_OF_USERNAME_COLON_APPLICATION_PASSWORD",
+                "TOOL_WHITELIST": "/wp/v2/posts"
+            }
+        }
+    }
+}
+```
+
+This exposes tools like `get_wp_v2_posts`, `post_wp_v2_posts`, `get_wp_v2_posts_by_id`, and `post_wp_v2_posts_by_id` (WordPress accepts POST for updates).
+
+Notes:
+
+- WordPress uses HTTP Basic auth with Application Passwords; `EXTRA_HEADERS` injects the `Authorization: Basic ...` header directly (`API_AUTH_TYPE: Basic` is not yet implemented).
+- If your host has a self-signed or mismatched TLS certificate (common on free hosting), set `IGNORE_SSL_TOOLS: "true"`.
+- Some shared hosts strip the `Authorization` header before it reaches PHP. If authenticated calls return `rest_not_logged_in`, add the following to your WordPress `.htaccess`:
+  ```
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+  ```
+
 ## Troubleshooting
 
 ### JSON-RPC Testing
