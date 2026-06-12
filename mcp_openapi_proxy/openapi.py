@@ -219,6 +219,13 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                             "type": schema_type,
                             "description": param_details.get('description', f"{param_in} parameter {param_name}")
                         }
+                        # Arrays must carry an items schema (required by JSON Schema
+                        # consumers such as the OpenAI API); fall back to string items.
+                        if schema_type == 'array':
+                            items_schema = param_schema.get('items')
+                            if not isinstance(items_schema, dict) or not items_schema:
+                                items_schema = {"type": "string"}
+                            input_schema['properties'][param_name]['items'] = items_schema
                         # Add format if available
                         if param_schema.get('format'):
                              input_schema['properties'][param_name]['format'] = param_schema.get('format')
@@ -255,7 +262,13 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                                body_schema = json_content['schema']
                                # If body schema is object with properties, merge them
                                if body_schema.get('type') == 'object' and 'properties' in body_schema:
-                                    input_schema['properties'].update(body_schema['properties'])
+                                    for prop_name, prop_schema in body_schema['properties'].items():
+                                         if isinstance(prop_schema, dict) and prop_schema.get('type') == 'array' and not isinstance(prop_schema.get('items'), dict):
+                                              # Ensure array properties carry items (required by
+                                              # consumers such as the OpenAI API).
+                                              prop_schema = dict(prop_schema)
+                                              prop_schema['items'] = {"type": "string"}
+                                         input_schema['properties'][prop_name] = prop_schema
                                     if 'required' in body_schema and isinstance(body_schema['required'], list):
                                          # Add required body properties, avoiding duplicates
                                          for req_prop in body_schema['required']:
