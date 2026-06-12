@@ -31,11 +31,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install build wheel twine setuptools
 
-    - name: Bump version automatically
+    - name: Show package version (from pyproject.toml)
       run: |
-        NEW_VERSION=$(python -c "import time; print('0.1.' + str(int(time.time())))")
-        echo "Updating version to $NEW_VERSION"
-        sed -i "s/^version = .*/version = \"$NEW_VERSION\"/" pyproject.toml
+        VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+        echo "Publishing version $VERSION"
 
     - name: Build package artifacts
       run: python -m build
@@ -49,4 +48,5 @@ jobs:
         repository-url: https://upload.pypi.org/legacy/
         password: ${{ secrets.PYPI_API_TOKEN }}
         attestations: false
+        skip-existing: true
         twine-args: --verbose
