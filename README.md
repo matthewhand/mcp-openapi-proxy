@@ -81,7 +81,6 @@ Refer to the **Examples** section below for practical configurations tailored to
 ## Environment Variables
 
 - `OPENAPI_SPEC_URL`: (Required) The URL to the OpenAPI specification JSON file (e.g. `https://example.com/spec.json` or `file:///path/to/local/spec.json`).
-- `OPENAPI_LOGFILE_PATH`: (Optional) Specifies the log file path.
 - `OPENAPI_SIMPLE_MODE`: (Optional) Set to `true` to enable FastMCP mode.
 - `TOOL_WHITELIST`: (Optional) A comma-separated list of endpoint paths to expose as tools.
 - `ADDITIONAL_RESOURCES`: (Optional) Comma-separated `name=/path/to/file` entries served as extra MCP resources (use-case docs such as naming policies or layout conventions; see `examples/resources/`).
@@ -96,6 +95,11 @@ Refer to the **Examples** section below for practical configurations tailored to
 - Additional Variable: `OPENAPI_SPEC_URL_<hash>` – a variant for unique per-test configurations (falls back to `OPENAPI_SPEC_URL`).
 - `IGNORE_SSL_SPEC`: (Optional) Set to `true` to disable SSL certificate verification when fetching the OpenAPI spec.
 - `IGNORE_SSL_TOOLS`: (Optional) Set to `true` to disable SSL certificate verification for API requests made by tools.
+- `API_AUTH_HEADER`: (Optional) Header name used when `API_AUTH_TYPE=api-key` (e.g. `x-apikey` for VirusTotal, `xi-api-key` for ElevenLabs). Defaults to `Authorization`.
+- `OPENAPI_SPEC_FORMAT`: (Optional) Set to `yaml` to parse `file://` specs as YAML (remote specs auto-detect). Default `json`.
+- `OPENAPI_SPEC_CACHE_TTL_SECONDS`: (Optional) Live-first disk cache for remote specs: the cached copy is served only when the live fetch fails or stalls (and respawned servers fail fast to it). Default `86400`; set `0` to disable.
+- `ENABLE_TOOLS` / `ENABLE_PROMPTS` / `ENABLE_RESOURCES`: (Optional) Feature gates for the three MCP surfaces in low-level mode; each defaults to enabled. Disabling a feature removes its handlers and its capability advertisement.
+- `CAPABILITIES_TOOLS` / `CAPABILITIES_PROMPTS` / `CAPABILITIES_RESOURCES`: (Optional) Advertise `listChanged` on the corresponding capability (for clients that key on it). Default `false`.
 
 ## Verified Clients & Live Results (2026-06-12)
 
