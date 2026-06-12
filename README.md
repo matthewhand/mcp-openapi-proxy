@@ -84,9 +84,10 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `OPENAPI_LOGFILE_PATH`: (Optional) Specifies the log file path.
 - `OPENAPI_SIMPLE_MODE`: (Optional) Set to `true` to enable FastMCP mode.
 - `TOOL_WHITELIST`: (Optional) A comma-separated list of endpoint paths to expose as tools.
+- `ADDITIONAL_RESOURCES`: (Optional) Comma-separated `name=/path/to/file` entries served as extra MCP resources (use-case docs such as naming policies or layout conventions; see `examples/resources/`).
 - `TOOL_NAME_PREFIX`: (Optional) A prefix to prepend to all tool names.
 - `API_KEY`: (Optional) Authentication token for the API sent as `Bearer <API_KEY>` in the Authorization header by default.
-- `API_AUTH_TYPE`: (Optional) Overrides the default `Bearer` Authorization header type (e.g. `Api-Key` for GetZep).
+- `API_AUTH_TYPE`: (Optional) Overrides the default `Bearer` Authorization scheme. `api-key` sends the key in the header named by `API_AUTH_HEADER`; any other value is used as a custom scheme prefix (e.g. `Token` for NetBox → `Authorization: Token <key>`).
 - `STRIP_PARAM`: (Optional) JMESPath expression to strip unwanted parameters (e.g. `token` for Slack).
 - `DEBUG`: (Optional) Enables verbose debug logging when set to "true", "1", or "yes".
 - `EXTRA_HEADERS`: (Optional) Additional HTTP headers in "Header: Value" format (one per line) to attach to outgoing API requests.
