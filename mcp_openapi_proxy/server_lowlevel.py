@@ -75,7 +75,12 @@ prompts: List[types.Prompt] = [
         name="summarize_spec",
         description="Summarizes the OpenAPI specification",
         arguments=[],
-    )
+    ),
+    types.Prompt(
+        name="whimsical_blog",
+        description="A whimsical WordPress blog-post starter inspired by this API",
+        arguments=[],
+    ),
 ]
 
 # Prompt message templates, keyed by prompt name. Kept separate from the
@@ -90,7 +95,21 @@ PROMPT_TEMPLATES: Dict[str, Any] = {
                 text="This OpenAPI spec defines endpoints, parameters, and responses—a blueprint for developers to integrate effectively.",
             ),
         )
-    ]
+    ],
+    "whimsical_blog": lambda args: [
+        types.PromptMessage(
+            role="assistant",
+            content=types.TextContent(
+                type="text",
+                text=(
+                    "Once upon a JSON, in a land of tilde keys and sticky semicolons, a pet AI "
+                    "chatbot discovered it could whisper to WordPress through a magic OpenAPI proxy. "
+                    "✨ Write the next whimsical chapter: how this humble API became a digital "
+                    "playground where agents publish tales at the speed of thought."
+                ),
+            ),
+        )
+    ],
 }
 
 
@@ -218,12 +237,15 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
         logger.debug(f"Request Body: {request_body}")
 
         try:
+            ignore_ssl_tools = os.getenv("IGNORE_SSL_TOOLS", "false").lower() in ("true", "1", "yes")
+            verify_ssl_tools = not ignore_ssl_tools
             response = requests.request(
                 method=method,
                 url=api_url,
                 headers=headers,
                 params=request_params if method == "GET" else None,
                 json=request_body if method != "GET" else None,
+                verify=verify_ssl_tools,
             )
             response.raise_for_status()
             response_text = (response.text or "No response body").strip()
