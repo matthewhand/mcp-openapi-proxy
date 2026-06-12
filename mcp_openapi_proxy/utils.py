@@ -21,6 +21,59 @@ def setup_logging(debug: bool = False):
     from .logging_setup import setup_logging as ls
     return ls(debug)
 
+def get_tool_name_max_length() -> Optional[int]:
+    """Parse TOOL_NAME_MAX_LENGTH from the environment.
+
+    Returns a positive int, or None when unset/invalid (invalid values are
+    logged and ignored gracefully).
+    """
+    max_length_env = os.getenv("TOOL_NAME_MAX_LENGTH")
+    if max_length_env:
+        try:
+            parsed_max_length = int(max_length_env)
+            if parsed_max_length > 0:
+                return parsed_max_length
+            logger.warning(f"Invalid TOOL_NAME_MAX_LENGTH env var: {max_length_env}. Ignoring.")
+        except ValueError:
+            logger.warning(f"Invalid TOOL_NAME_MAX_LENGTH env var: {max_length_env}. Ignoring.")
+    return None
+
+
+def effective_tool_name_limit() -> int:
+    """The actual cap applied to tool names: TOOL_NAME_MAX_LENGTH bounded by
+    the 64-char protocol limit."""
+    custom = get_tool_name_max_length()
+    protocol_max = 64
+    return min(custom, protocol_max) if custom is not None else protocol_max
+
+
+def deduplicate_tool_name(tool_name: str, registered_names) -> str:
+    """Return a unique variant of tool_name that stays within the effective
+    length limit.
+
+    When TOOL_NAME_MAX_LENGTH truncation makes two endpoints collide on the
+    same name, the second must not be dropped (issue #11); it gets a short
+    numeric suffix instead, with the base truncated to keep within the limit.
+    """
+    if tool_name not in registered_names:
+        return tool_name
+    limit = effective_tool_name_limit()
+    counter = 2
+    while True:
+        suffix = f"_{counter}"
+        if len(tool_name) + len(suffix) <= limit:
+            candidate = f"{tool_name}{suffix}"
+        else:
+            candidate = f"{tool_name[:max(0, limit - len(suffix))]}{suffix}"
+        if candidate not in registered_names:
+            logger.warning(
+                f"Tool name collision for '{tool_name}' (TOOL_NAME_MAX_LENGTH truncation); "
+                f"renamed to '{candidate}'."
+            )
+            return candidate
+        counter += 1
+
+
 def normalize_tool_name(raw_name: str, max_length: Optional[int] = None) -> str:
     """
     Convert an HTTP method and path into a normalized tool name, applying length limits.
@@ -68,16 +121,7 @@ def normalize_tool_name(raw_name: str, max_length: Optional[int] = None) -> str:
         # Determine the effective custom max length based on env var and argument
         effective_max_length: Optional[int] = max_length
         if effective_max_length is None:
-            max_length_env = os.getenv("TOOL_NAME_MAX_LENGTH")
-            if max_length_env:
-                try:
-                    parsed_max_length = int(max_length_env)
-                    if parsed_max_length > 0:
-                        effective_max_length = parsed_max_length
-                    else:
-                        logger.warning(f"Invalid TOOL_NAME_MAX_LENGTH env var: {max_length_env}. Ignoring.")
-                except ValueError:
-                    logger.warning(f"Invalid TOOL_NAME_MAX_LENGTH env var: {max_length_env}. Ignoring.")
+            effective_max_length = get_tool_name_max_length()
 
         # Protocol limit
         PROTOCOL_MAX_LENGTH = 64

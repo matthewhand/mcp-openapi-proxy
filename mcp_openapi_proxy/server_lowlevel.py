@@ -468,6 +468,13 @@ async def get_prompt(request: types.GetPromptRequest) -> types.GetPromptResult:
 
 
 def lookup_operation_details(function_name: str, spec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    # Resolve names recorded at registration time first: names deduplicated
+    # after TOOL_NAME_MAX_LENGTH truncation (issue #11) cannot be regenerated
+    # from the spec alone.
+    from mcp_openapi_proxy.openapi import _REGISTERED_OPERATIONS
+    registered = _REGISTERED_OPERATIONS.get(function_name)
+    if registered:
+        return dict(registered)
     if not spec or 'paths' not in spec:
         return None
     for path, path_item in spec['paths'].items():
