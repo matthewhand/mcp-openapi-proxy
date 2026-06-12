@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mcp-openapi-proxy"
 requires-python = ">=3.10"
-version = "0.2.0"
+version = "0.2.1"
 description = "MCP server for exposing OpenAPI specifications as MCP tools."
 readme = "README.md"
 authors = [
