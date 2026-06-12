@@ -359,9 +359,12 @@ def is_tool_whitelisted(endpoint: str) -> bool:
                  logger.error(f"Invalid regex pattern generated from whitelist entry '{entry}': {pattern}. Error: {e}")
                  continue # Skip this invalid pattern
         elif normalized_endpoint.startswith(normalized_entry):
-             # Simple prefix match (e.g., /users allows /users/123)
-             # Ensure it matches either the exact path or a path segment start
-             if normalized_endpoint == normalized_entry or normalized_endpoint.startswith(normalized_entry + "/"):
+             # Simple prefix match (e.g., /users allows /users/123).
+             # A segment may continue with "/" (REST style) or "." (Slack-style
+             # method paths such as /users.list), but /chat must not match /chatter.
+             if (normalized_endpoint == normalized_entry
+                     or normalized_endpoint.startswith(normalized_entry + "/")
+                     or normalized_endpoint.startswith(normalized_entry + ".")):
                   logger.debug(f"Endpoint '{normalized_endpoint}' matches whitelist prefix '{normalized_entry}' from entry '{entry}'")
                   return True
 
