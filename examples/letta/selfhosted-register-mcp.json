@@ -1,0 +1,9 @@
+{
+  "server_name": "glama",
+  "type": "stdio",
+  "command": "uvx",
+  "args": ["mcp-openapi-proxy"],
+  "env": {
+    "OPENAPI_SPEC_URL": "https://glama.ai/api/mcp/openapi.json"
+  }
+}
