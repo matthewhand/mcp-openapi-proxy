@@ -846,6 +846,18 @@ You can now use the MCP ecosystem to list and invoke WolframAlpha API tools. For
 
 </details>
 
+<details>
+<summary><b>Letta (self-hosted + Cloud)</b> — agent platform; stdio for self-hosted, authenticated remote HTTP for Cloud</summary>
+
+Letta runs agents on a server, so attachment differs by deployment:
+
+- **Self-hosted Letta** accepts a **stdio** MCP server via `PUT /v1/tools/mcp/servers` — no network exposure.
+- **Letta Cloud** rejects stdio and needs a **remote streamable-HTTP** MCP URL behind authentication.
+
+Both were verified live (an agent autonomously called `get_v1_attributes` from the Glama spec through the proxy). Full setup for both paths, including the supergateway wrapper and the security note for the Cloud endpoint, is in [`examples/letta/README.md`](examples/letta/README.md).
+
+</details>
+
 ## Troubleshooting
 
 ### JSON-RPC Testing
