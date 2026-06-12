@@ -58,28 +58,72 @@ ENABLE_TOOLS = os.getenv("ENABLE_TOOLS", "true").lower() == "true"
 ENABLE_RESOURCES = os.getenv("ENABLE_RESOURCES", "false").lower() == "true"
 ENABLE_PROMPTS = os.getenv("ENABLE_PROMPTS", "false").lower() == "true"
 
-resources: List[types.Resource] = []
-prompts: List[types.Prompt] = []
-
-if ENABLE_RESOURCES:
-    resources.append(
-        types.Resource(
-            name="spec_file",
-            uri=AnyUrl("file:///openapi_spec.json"),
-            description="The raw OpenAPI specification JSON"
-        )
+# Resource and prompt DEFINITIONS are always present so the feature is
+# deterministically testable. Whether they are EXPOSED to clients is gated
+# separately by ENABLE_RESOURCES / ENABLE_PROMPTS, which control handler
+# registration (run_server) and capability advertisement (build_capabilities).
+resources: List[types.Resource] = [
+    types.Resource(
+        name="spec_file",
+        uri=AnyUrl("file:///openapi_spec.json"),
+        description="The raw OpenAPI specification JSON",
     )
+]
 
-if ENABLE_PROMPTS:
-    prompts.append(
-        types.Prompt(
-            name="summarize_spec",
-            description="Summarizes the OpenAPI specification",
-            arguments=[],
-            messages=lambda args: [
-                {"role": "assistant", "content": {"text": "This OpenAPI spec defines endpoints, parameters, and responses—a blueprint for developers to integrate effectively."}}
-            ]
+prompts: List[types.Prompt] = [
+    types.Prompt(
+        name="summarize_spec",
+        description="Summarizes the OpenAPI specification",
+        arguments=[],
+    ),
+    types.Prompt(
+        name="whimsical_blog",
+        description="A whimsical WordPress blog-post starter inspired by this API",
+        arguments=[],
+    ),
+]
+
+# Prompt message templates, keyed by prompt name. Kept separate from the
+# types.Prompt metadata, which has no `messages` field — get_prompt() builds
+# the actual PromptMessage list from these.
+PROMPT_TEMPLATES: Dict[str, Any] = {
+    "summarize_spec": lambda args: [
+        types.PromptMessage(
+            role="assistant",
+            content=types.TextContent(
+                type="text",
+                text="This OpenAPI spec defines endpoints, parameters, and responses—a blueprint for developers to integrate effectively.",
+            ),
         )
+    ],
+    "whimsical_blog": lambda args: [
+        types.PromptMessage(
+            role="assistant",
+            content=types.TextContent(
+                type="text",
+                text=(
+                    "Once upon a JSON, in a land of tilde keys and sticky semicolons, a pet AI "
+                    "chatbot discovered it could whisper to WordPress through a magic OpenAPI proxy. "
+                    "✨ Write the next whimsical chapter: how this humble API became a digital "
+                    "playground where agents publish tales at the speed of thought."
+                ),
+            ),
+        )
+    ],
+}
+
+
+def build_capabilities() -> "types.ServerCapabilities":
+    """Advertise a capability whenever its feature is enabled (ENABLE_*).
+
+    A capability object must be present for strict MCP clients (e.g. Gemini,
+    Codex, Qwen) to attempt list_tools/list_resources/list_prompts at all;
+    `listChanged` is a sub-detail controlled by the CAPABILITIES_* envvars.
+    """
+    return types.ServerCapabilities(
+        tools=types.ToolsCapability(listChanged=CAPABILITIES_TOOLS) if ENABLE_TOOLS else None,
+        prompts=types.PromptsCapability(listChanged=CAPABILITIES_PROMPTS) if ENABLE_PROMPTS else None,
+        resources=types.ResourcesCapability(listChanged=CAPABILITIES_RESOURCES) if ENABLE_RESOURCES else None,
     )
 
 openapi_spec_data: Optional[Dict[str, Any]] = None
@@ -193,10 +237,8 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
         logger.debug(f"Request Body: {request_body}")
 
         try:
-            # Add SSL verification control for API calls using IGNORE_SSL_TOOLS
             ignore_ssl_tools = os.getenv("IGNORE_SSL_TOOLS", "false").lower() in ("true", "1", "yes")
             verify_ssl_tools = not ignore_ssl_tools
-            logger.debug(f"Sending API request with SSL verification: {verify_ssl_tools} (IGNORE_SSL_TOOLS={ignore_ssl_tools})")
             response = requests.request(
                 method=method,
                 url=api_url,
@@ -247,11 +289,7 @@ async def list_resources(request: types.ListResourcesRequest) -> types.ListResou
             )
         )
     logger.debug(f"Resources list length: {len(resources)}")
-    class ResourcesHolder:
-        pass
-    result = ResourcesHolder()
-    result.resources = resources
-    return result
+    return types.ListResourcesResult(resources=resources)
 
 
 async def read_resource(request: types.ReadResourceRequest) -> types.ReadResourceResult:
@@ -314,19 +352,20 @@ async def list_prompts(request: types.ListPromptsRequest) -> types.ListPromptsRe
 
 async def get_prompt(request: types.GetPromptRequest) -> types.GetPromptResult:
     logger.debug(f"Handling get_prompt request for {request.params.name}")
-    prompt = next((p for p in prompts if p.name == request.params.name), None)
-    if not prompt:
+    template = PROMPT_TEMPLATES.get(request.params.name)
+    if template is None:
         logger.error(f"Prompt '{request.params.name}' not found")
         return types.GetPromptResult(
+            description="Prompt not found",
             messages=[
                 types.PromptMessage(
-                    role="system",
-                    content={"text": "Prompt not found"}
+                    role="assistant",
+                    content=types.TextContent(type="text", text=f"Prompt '{request.params.name}' not found"),
                 )
-            ]
+            ],
         )
     try:
-        messages = prompt.messages(request.params.arguments or {})
+        messages = template(request.params.arguments or {})
         logger.debug(f"Generated messages: {messages}")
         return types.GetPromptResult(messages=messages)
     except Exception as e:
@@ -334,10 +373,10 @@ async def get_prompt(request: types.GetPromptRequest) -> types.GetPromptResult:
         return types.GetPromptResult(
             messages=[
                 types.PromptMessage(
-                    role="system",
-                    content={"text": f"Prompt error: {str(e)}"}
+                    role="assistant",
+                    content=types.TextContent(type="text", text=f"Prompt error: {str(e)}"),
                 )
-            ]
+            ],
         )
 
 
@@ -360,11 +399,7 @@ async def start_server():
     async with stdio_server() as (read_stream, write_stream):
         while True:
             try:
-                capabilities = types.ServerCapabilities(
-                    tools=types.ToolsCapability(listChanged=True) if CAPABILITIES_TOOLS else None,
-                    prompts=types.PromptsCapability(listChanged=True) if CAPABILITIES_PROMPTS else None,
-                    resources=types.ResourcesCapability(listChanged=True) if CAPABILITIES_RESOURCES else None
-                )
+                capabilities = build_capabilities()
                 await mcp.run(
                     read_stream,
                     write_stream,
