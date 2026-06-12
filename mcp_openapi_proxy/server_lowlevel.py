@@ -70,6 +70,33 @@ resources: List[types.Resource] = [
     )
 ]
 
+
+def _load_additional_resources() -> Dict[str, str]:
+    """Parse ADDITIONAL_RESOURCES ("name=/path/file.md,name2=/path2") into
+    {name: path} and register each as a listed resource. Lets a deployment
+    ship use-case documents (naming policies, layout conventions) alongside
+    the spec — see examples/resources/."""
+    mapping: Dict[str, str] = {}
+    for entry in os.getenv("ADDITIONAL_RESOURCES", "").split(","):
+        entry = entry.strip()
+        if not entry or "=" not in entry:
+            continue
+        name, path = (part.strip() for part in entry.split("=", 1))
+        if not name or not path:
+            continue
+        mapping[name] = path
+        resources.append(
+            types.Resource(
+                name=name,
+                uri=AnyUrl(f"file:///{name}"),
+                description=f"Additional resource served from {os.path.basename(path)}",
+            )
+        )
+    return mapping
+
+
+ADDITIONAL_RESOURCES: Dict[str, str] = _load_additional_resources()
+
 prompts: List[types.Prompt] = [
     types.Prompt(
         name="summarize_spec",
@@ -295,6 +322,22 @@ async def list_resources(request: types.ListResourcesRequest) -> types.ListResou
 async def read_resource(request: types.ReadResourceRequest) -> types.ReadResourceResult:
     logger.debug(f"START read_resource for URI: {request.params.uri}")
     try:
+        uri_str = str(request.params.uri)
+        for name, path in ADDITIONAL_RESOURCES.items():
+            if uri_str == f"file:///{name}":
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        text = f.read()
+                except OSError as exc:
+                    text = f"Resource '{name}' unavailable: {exc}"
+                mime = "text/markdown" if path.endswith((".md", ".markdown")) else "text/plain"
+                return types.ReadResourceResult(
+                    contents=[
+                        types.TextResourceContents(
+                            uri=request.params.uri, text=text, mimeType=mime
+                        )
+                    ]
+                )
         openapi_url = os.getenv("OPENAPI_SPEC_URL")
         logger.debug(f"Got OPENAPI_SPEC_URL: {openapi_url}")
         if not openapi_url:
