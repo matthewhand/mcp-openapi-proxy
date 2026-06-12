@@ -9,7 +9,6 @@
 - ✅ **Codex**, **Gemini**, **Qwen**, **Kilocode**, **opencode** — native tool calls over stdio
 - ✅ **Vibe** — native discovery and read calls (writes were CLI-flaky, not a proxy issue)
 - ✅ **Letta** — Cloud (via a remote streamable-HTTP MCP URL) and self-hosted (via stdio)
-- ⚠️ **agy** — could not attach in headless mode; MCP tool enablement is interactive-only in agy (an agy limitation, not the proxy)
 
 See the [client matrix](#client-matrix) for attach mechanisms, models, and exact results.
 
