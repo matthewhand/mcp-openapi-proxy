@@ -112,10 +112,65 @@ def normalize_tool_name(raw_name: str, max_length: Optional[int] = None) -> str:
         logger.error(f"Error normalizing tool name '{raw_name}': {e}", exc_info=True)
         return "unknown_tool" # Return a default on unexpected error
 
+def _spec_cache_path(url: str) -> str:
+    import hashlib
+    cache_dir = os.path.join(
+        os.getenv("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "mcp-openapi-proxy"
+    )
+    os.makedirs(cache_dir, exist_ok=True)
+    return os.path.join(cache_dir, f"spec-{hashlib.sha256(url.encode()).hexdigest()[:24]}.json")
+
+
+def _spec_cache_ttl() -> int:
+    try:
+        return int(os.getenv("OPENAPI_SPEC_CACHE_TTL_SECONDS", "86400"))
+    except ValueError:
+        return 86400
+
+
+def _spec_cache_load(url: str) -> Optional[Dict]:
+    """Fallback copy of a previously fetched remote spec, if fresh enough."""
+    import time
+    if _spec_cache_ttl() <= 0 or url.startswith("file://"):
+        return None
+    path = _spec_cache_path(url)
+    try:
+        age = time.time() - os.path.getmtime(path)
+        if age < _spec_cache_ttl():
+            with open(path, "r") as f:
+                spec = json.load(f)
+            logger.debug(f"Spec cache hit for {url} (age {int(age)}s): {path}")
+            return spec
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def _spec_cache_store(url: str, spec: Dict) -> None:
+    if url.startswith("file://") or _spec_cache_ttl() <= 0:
+        return
+    try:
+        path = _spec_cache_path(url)
+        with open(path + ".tmp", "w") as f:
+            json.dump(spec, f)
+        os.replace(path + ".tmp", path)
+        logger.debug(f"Cached spec for {url} at {path}")
+    except OSError as exc:
+        logger.warning(f"Could not write spec cache: {exc}")
+
+
 def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
+    """Fetch and parse an OpenAPI specification (JSON or YAML) from a URL.
+
+    Live-first with cache fallback (issue #28): remote fetches are always
+    attempted first; a previously cached copy is used only when the live
+    retrieval fails or stalls. When a fallback exists we fail fast (single
+    attempt) instead of burning the full retry budget. Tune with
+    OPENAPI_SPEC_CACHE_TTL_SECONDS (default 86400; 0 disables caching).
     """
-    Fetch and parse an OpenAPI specification from a URL with retries.
-    """
+    fallback = _spec_cache_load(url)
+    if fallback is not None:
+        retries = 1  # fail fast to the cached copy instead of retrying for ~30s
     logger.debug(f"Fetching OpenAPI spec from URL: {url}")
     attempt = 0
     while attempt < retries:
@@ -158,11 +213,15 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                     except yaml.YAMLError as ye:
                         logger.error(f"YAML parsing failed: {ye}. Raw content: {content[:500]}...")
                         return None
+            _spec_cache_store(url, spec)
             return spec
         except requests.RequestException as e:
             attempt += 1
             logger.warning(f"Fetch attempt {attempt}/{retries} failed: {e}")
             if attempt == retries:
+                if fallback is not None:
+                    logger.warning(f"Live fetch failed for {url}; serving cached copy.")
+                    return fallback
                 logger.error(f"Failed to fetch spec from {url} after {retries} attempts: {e}")
                 return None
         except FileNotFoundError as e:
@@ -172,6 +231,9 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
             attempt += 1
             logger.warning(f"Unexpected error during fetch attempt {attempt}/{retries}: {e}")
             if attempt == retries:
+                if fallback is not None:
+                    logger.warning(f"Live fetch errored for {url}; serving cached copy.")
+                    return fallback
                 logger.error(f"Failed to process spec from {url} after {retries} attempts due to unexpected error: {e}")
                 return None
     return None

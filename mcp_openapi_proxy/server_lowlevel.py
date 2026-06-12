@@ -155,6 +155,46 @@ def build_capabilities() -> "types.ServerCapabilities":
 
 openapi_spec_data: Optional[Dict[str, Any]] = None
 
+# Lazy spec loading (issue #28): the MCP handshake must be answered immediately,
+# even when OPENAPI_SPEC_URL is slow to download/parse. Clients with short
+# connect timeouts (observed: Kilocode, Vibe) otherwise hang up mid-handshake,
+# the proxy dies on the closed stream, the client respawns it — a crash loop.
+_spec_load_lock: Optional[asyncio.Lock] = None
+_spec_load_error: Optional[str] = None
+
+
+async def ensure_spec_loaded() -> Optional[Dict[str, Any]]:
+    """Fetch and register the OpenAPI spec on first use. Safe to call from any
+    handler; concurrent callers await the same fetch."""
+    global openapi_spec_data, _spec_load_lock, _spec_load_error
+    if openapi_spec_data is not None or _spec_load_error is not None:
+        return openapi_spec_data
+    if _spec_load_lock is None:
+        _spec_load_lock = asyncio.Lock()
+    async with _spec_load_lock:
+        if openapi_spec_data is not None or _spec_load_error is not None:
+            return openapi_spec_data
+        openapi_url = os.getenv("OPENAPI_SPEC_URL")
+        if not openapi_url:
+            _spec_load_error = "OPENAPI_SPEC_URL not set"
+            logger.critical(_spec_load_error)
+            return None
+        logger.debug(f"Lazily fetching OpenAPI spec from {openapi_url}...")
+        spec = await anyio.to_thread.run_sync(fetch_openapi_spec, openapi_url)
+        if not spec:
+            _spec_load_error = f"Failed to fetch or parse OpenAPI spec from {openapi_url}"
+            logger.critical(_spec_load_error)
+            return None
+        openapi_spec_data = spec
+        if ENABLE_TOOLS:
+            from mcp_openapi_proxy.handlers import register_functions
+            register_functions(spec)
+            logger.debug(f"Tools registered lazily: {[tool.name for tool in tools]}")
+            if not tools:
+                logger.critical("No valid tools registered from spec.")
+        return openapi_spec_data
+
+
 mcp = Server("OpenApiProxy-LowLevel")
 
 async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolResult:
@@ -163,6 +203,7 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
     """
     global openapi_spec_data
     try:
+        await ensure_spec_loaded()
         function_name = request.params.name
         logger.debug(f"Dispatcher received CallToolRequest for function: {function_name}")
         logger.debug(f"API_KEY: {os.getenv('API_KEY', '<not set>')[:5] + '...' if os.getenv('API_KEY') else '<not set>'}")
@@ -299,23 +340,26 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
 
 async def list_tools(request: types.ListToolsRequest) -> types.ListToolsResult:
     logger.debug("Handling list_tools request - start")
+    await ensure_spec_loaded()
     logger.debug(f"Tools list length: {len(tools)}")
     return types.ListToolsResult(tools=tools)
 
 async def list_resources(request: types.ListResourcesRequest) -> types.ListResourcesResult:
-    logger.debug("Handling list_resources request")
-    from pydantic import AnyUrl
-    from types import SimpleNamespace
+    """List the spec_file resource plus any ADDITIONAL_RESOURCES entries.
+
+    The module-level `resources` list is always seeded with spec_file; the
+    guard below only matters if a caller mutated it at runtime.
+    """
+    logger.debug(f"Handling list_resources request ({len(resources)} resources)")
     if not resources:
-        logger.debug("Resources empty; populating default resource")
+        logger.debug("Resources empty; repopulating default resource")
         resources.append(
             types.Resource(
                 name="spec_file",
                 uri=AnyUrl("file:///openapi_spec.json"),
-                description="The raw OpenAPI specification JSON"
+                description="The raw OpenAPI specification JSON",
             )
         )
-    logger.debug(f"Resources list length: {len(resources)}")
     return types.ListResourcesResult(resources=resources)
 
 
@@ -437,8 +481,20 @@ def lookup_operation_details(function_name: str, spec: Dict[str, Any]) -> Option
     return None
 
 
+def _is_closed_stream_error(exc: BaseException) -> bool:
+    """True when the failure means the client hung up — retrying is pointless."""
+    if isinstance(exc, (anyio.ClosedResourceError, anyio.BrokenResourceError, anyio.EndOfStream)):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_is_closed_stream_error(sub) for sub in exc.exceptions)
+    return False
+
+
 async def start_server():
     logger.debug("Starting Low-Level MCP server...")
+    # Pre-warm the spec in the background: the handshake is served immediately
+    # while the (possibly slow) spec download proceeds (issue #28).
+    prewarm = asyncio.create_task(ensure_spec_loaded())
     async with stdio_server() as (read_stream, write_stream):
         while True:
             try:
@@ -452,30 +508,27 @@ async def start_server():
                         capabilities=capabilities,
                     ),
                 )
-            except Exception as e:
+                logger.debug("MCP session ended normally; exiting.")
+                break
+            except BaseException as e:
+                if _is_closed_stream_error(e):
+                    # Client disconnected (e.g. short connect timeout while the
+                    # spec was still loading). Exit cleanly instead of spinning
+                    # on a dead stream — the client respawns us if it wants to.
+                    logger.warning("Client closed the stream; shutting down cleanly.")
+                    break
                 logger.error(f"MCP run crashed: {e}", exc_info=True)
                 await anyio.sleep(1)
+    prewarm.cancel()
 
 
 def run_server():
-    global openapi_spec_data
     try:
-        openapi_url = os.getenv('OPENAPI_SPEC_URL')
-        if not openapi_url:
+        if not os.getenv('OPENAPI_SPEC_URL'):
             logger.critical("OPENAPI_SPEC_URL environment variable is required but not set.")
             sys.exit(1)
-        openapi_spec_data = fetch_openapi_spec(openapi_url)
-        if not openapi_spec_data:
-            logger.critical("Failed to fetch or parse OpenAPI specification from OPENAPI_SPEC_URL.")
-            sys.exit(1)
-        logger.debug("OpenAPI specification fetched successfully.")
-        if ENABLE_TOOLS:
-            from mcp_openapi_proxy.handlers import register_functions
-            register_functions(openapi_spec_data)
-        logger.debug(f"Tools after registration: {[tool.name for tool in tools]}")
-        if ENABLE_TOOLS and not tools:
-            logger.critical("No valid tools registered. Shutting down.")
-            sys.exit(1)
+        # Spec fetch + tool registration are lazy (ensure_spec_loaded) so the
+        # MCP handshake is never blocked by a slow spec download (issue #28).
         if ENABLE_TOOLS:
             mcp.request_handlers[types.ListToolsRequest] = list_tools
             mcp.request_handlers[types.CallToolRequest] = dispatcher_handler
