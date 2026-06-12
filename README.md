@@ -13,6 +13,8 @@
 
 See the [client matrix](#client-matrix) for attach mechanisms, models, and exact results.
 
+> 📄 Full write-up: [**Verification case study**](docs/verification-case-study.md) — what the proxy is, the API + client matrices, and every defect found & fixed.
+
 **Prompts and resources are real now — including custom resources.** Both MCP surfaces are functional and tested: the `summarize_spec` / `whimsical_blog` prompts and the `spec_file` resource, plus a new `ADDITIONAL_RESOURCES` env var that serves your *own* use-case documents (e.g. a NetBox naming policy or an Asana project-layout guide) as MCP resources — see `examples/resources/`.
 
 **Bug fixes (every one live-verified):**
