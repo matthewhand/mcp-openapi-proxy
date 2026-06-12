@@ -119,16 +119,17 @@ The example configurations below were exercised against the live APIs, and the p
 
 ### Client matrix
 
-| Agent CLI | MCP attach mechanism | Tool calls | Prompts/Resources surfaced to model? |
-|---|---|---|---|
-| Codex | `codex exec -c mcp_servers.*` | ✅ native | ❌ (used raw stdio) |
-| Gemini | project `.gemini/settings.json` `mcpServers` | ✅ native | ❌ interactive slash-commands only |
-| Qwen | project `.qwen/settings.json` | ✅ native | ❌ NO_PROMPT_ACCESS |
-| Kilocode | global `settings/mcp_settings.json`, clean workspace | ✅ native | ❌ |
-| opencode | `~/.config/opencode/opencode.json` `mcp` | ✅ native | ❌ |
-| Vibe | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads (writes flaky) | ❌ |
-| agy | — | ❌ headless cannot enable MCP | — |
-| letta cloud | — | ❌ stdio rejected (remote MCP only) | — |
+| Agent CLI | Model used (live test) | MCP attach mechanism | Tool calls | Prompts/Resources surfaced to model? |
+|---|---|---|---|---|
+| Codex | `gpt-5-codex` (OpenAI API) | `codex exec -c mcp_servers.*` | ✅ native | ❌ (used raw stdio) |
+| Gemini | Google OAuth free tier (CLI default model) | project `.gemini/settings.json` `mcpServers` | ✅ native | ❌ interactive slash-commands only |
+| Qwen | `agent` group via local LiteLLM gateway | project `.qwen/settings.json` | ✅ native | ❌ NO_PROMPT_ACCESS |
+| Kilocode | `kilo-auto/free` | global `settings/mcp_settings.json`, clean workspace | ✅ native | ❌ |
+| opencode | `orchestration` group via local LiteLLM gateway | `~/.config/opencode/opencode.json` `mcp` | ✅ native | ❌ |
+| Vibe | `mistral-medium-3.5` | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads (writes flaky) | ❌ |
+| agy | — | — | ❌ headless cannot enable MCP | — |
+| letta cloud | Letta Cloud default | streamable-HTTP MCP URL (`/mcp add --transport http` + bearer) | ✅ remote (stdio rejected) | — |
+| letta (self-hosted ≤0.11.x) | `agent` group via local LiteLLM gateway | stdio via `PUT /v1/tools/mcp/servers` | ✅ native | — |
 
 Minimal sanitized configs per client (the no-auth Glama spec is used as the smallest working example; substitute your own spec URL and `$YOUR_KEY` as needed):
 
