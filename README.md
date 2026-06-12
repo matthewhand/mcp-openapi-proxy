@@ -15,6 +15,7 @@
 - [Examples](#examples)
   - [Glama Example](#glama-example)
   - [Fly.io Example](#flyio-example)
+  - [Render Example](#render-example)
   - [Slack Example](#slack-example)
   - [GetZep Example](#getzep-example)
   - [Virustotal Example](#virustotal-example)
@@ -93,7 +94,6 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `OPENAPI_LOGFILE_PATH`: (Optional) Specifies the log file path.
 - `OPENAPI_SIMPLE_MODE`: (Optional) Set to `true` to enable FastMCP mode.
 - `TOOL_WHITELIST`: (Optional) A comma-separated list of endpoint paths to expose as tools.
-- `ADDITIONAL_RESOURCES`: (Optional) Comma-separated `name=/path/to/file` entries served as extra MCP resources (use-case docs such as naming policies or layout conventions an agent should consult; see `examples/resources/`).
 - `TOOL_NAME_PREFIX`: (Optional) A prefix to prepend to all tool names.
 - `API_KEY`: (Optional) Authentication token for the API sent as `Bearer <API_KEY>` in the Authorization header by default.
 - `API_AUTH_TYPE`: (Optional) Overrides the default `Bearer` Authorization header type (e.g. `Api-Key` for GetZep).
@@ -196,6 +196,52 @@ Update your MCP ecosystem configuration:
 #### 3. Testing
 
 After starting the service refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
+
+### Render Example
+
+![image](https://github.com/user-attachments/assets/f1dee1bf-e330-41f1-a700-6386edd8895e)
+
+Render offers infrastructure hosting that can be managed via an API. The provided configuration file `examples/render-claude_desktop_config.json` demonstrates how to set up your MCP ecosystem quickly with minimal settings.
+
+#### 1. Verify the OpenAPI Specification
+
+Retrieve the Render OpenAPI specification:
+
+```bash
+curl https://api-docs.render.com/openapi/render-public-api-1.json
+```
+
+Ensure the response is a valid OpenAPI document.
+
+#### 2. Configure mcp-openapi-proxy for Render
+
+Add the following configuration to your MCP ecosystem settings:
+
+```json
+{
+    "mcpServers": {
+        "render": {
+            "command": "uvx",
+            "args": ["mcp-openapi-proxy"],
+            "env": {
+                "OPENAPI_SPEC_URL": "https://api-docs.render.com/openapi/render-public-api-1.json",
+                "TOOL_WHITELIST": "/services,/maintenance",
+                "API_KEY": "your_render_token_here"
+            }
+        }
+    }
+}
+```
+
+#### 3. Testing
+
+Launch the proxy with your Render configuration:
+
+```bash
+OPENAPI_SPEC_URL="https://api-docs.render.com/openapi/render-public-api-1.json" TOOL_WHITELIST="/services,/maintenance" API_KEY="your_render_token_here" uvx mcp-openapi-proxy
+```
+
+Then refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
 
 ### Slack Example
 
@@ -595,51 +641,6 @@ You can integrate the WolframAlpha API using your own App ID for authenticated a
   ```
 
 You can now use the MCP ecosystem to list and invoke WolframAlpha API tools. For integration tests, see `tests/integration/test_wolframalpha_integration.py`.
-
-### WordPress Example
-
-Manage WordPress posts (list, create, update) via the [WordPress REST API](https://developer.wordpress.org/rest-api/). Proven against a stock WordPress install on AwardSpace free hosting, so it works even on budget/free shared hosting. A minimal posts-only OpenAPI spec is provided at [examples/wordpress-openapi.json](examples/wordpress-openapi.json) — the spec is site-agnostic; point it at your site with `SERVER_URL_OVERRIDE` so nothing site-specific is hardcoded.
-
-#### 1. Create a WordPress Application Password
-
-In wp-admin go to **Users → Profile → Application Passwords**, create one, and base64-encode `username:application_password` (strip spaces from the password):
-
-```bash
-echo -n 'myuser:abcd1234efgh5678' | base64
-```
-
-#### 2. Configure mcp-openapi-proxy for WordPress
-
-```json
-{
-    "mcpServers": {
-        "wordpress": {
-            "command": "uvx",
-            "args": ["mcp-openapi-proxy"],
-            "env": {
-                "OPENAPI_SPEC_URL": "https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/main/examples/wordpress-openapi.json",
-                "SERVER_URL_OVERRIDE": "https://your-site.example.com/wp-json",
-                "EXTRA_HEADERS": "Authorization: Basic BASE64_OF_USERNAME_COLON_APPLICATION_PASSWORD",
-                "TOOL_WHITELIST": "/wp/v2/posts"
-            }
-        }
-    }
-}
-```
-
-This exposes tools like `get_wp_v2_posts`, `post_wp_v2_posts`, `get_wp_v2_posts_by_id`, and `post_wp_v2_posts_by_id` (WordPress accepts POST for updates).
-
-Notes:
-
-- WordPress uses HTTP Basic auth with Application Passwords; `EXTRA_HEADERS` injects the `Authorization: Basic ...` header directly (`API_AUTH_TYPE: Basic` is not yet implemented). A login password will **not** work — REST only accepts Application Passwords.
-- If your host has a self-signed or mismatched TLS certificate (common on free/shared hosting, where the cert is for the hosting box, not your domain), set `IGNORE_SSL_TOOLS: "true"`.
-- **"Application password feature requires HTTPS" even over https?** Shared hosts terminate TLS at a proxy and forward http to WordPress, so `is_ssl()` is false and app passwords are disabled. See the shared-hosting gist below for a one-file plugin that fixes it.
-- On nginx/php-fpm (FastCGI) hosts the `Authorization` header may not reach PHP — forward it with `fastcgi_param HTTP_AUTHORIZATION $http_authorization;` (or the `.htaccess` equivalent `RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]` on Apache-CGI). Not needed under Apache mod_php.
-
-Further reading (full walkthroughs, tested end-to-end):
-
-- [WordPress on AwardSpace / shared hosting](https://gist.github.com/matthewhand/9420021fc8b8865c401fac6f2535ec7c) — the HTTPS-proxy app-password fix, app-password vs login password, and mismatched-cert handling.
-- [Local WordPress via Docker Compose](https://gist.github.com/matthewhand/66a682c6ae8cd0fc16b8d3601653db60) — a throwaway WordPress for testing list/create/update locally.
 
 ## Troubleshooting
 
