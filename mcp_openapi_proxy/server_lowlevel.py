@@ -408,7 +408,7 @@ async def read_resource(request: types.ReadResourceRequest) -> types.ReadResourc
                 ]
             )
         logger.debug("Dumping spec to JSON...")
-        spec_json = json.dumps(spec_data, indent=2)
+        spec_json = json.dumps(spec_data, indent=2, default=str)
         logger.debug(f"Forcing spec JSON return: {spec_json[:50]}...")
         return types.ReadResourceResult(
             contents=[

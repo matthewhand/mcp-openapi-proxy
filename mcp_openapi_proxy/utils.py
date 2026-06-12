@@ -14,6 +14,28 @@ from mcp import types
 # Import the configured logger
 from .logging_setup import logger
 
+
+class _NoTimestampSafeLoader(yaml.SafeLoader):
+    """SafeLoader that keeps unquoted RFC3339 timestamps as plain strings.
+
+    PyYAML's SafeLoader auto-converts values like ``2015-02-22T20:00:45.000Z``
+    into Python ``datetime`` objects. Such objects are not JSON-serializable,
+    which crashed spec caching and ``resources/read`` for specs that carry
+    datetime example values (e.g. the apis.guru directory spec). Loading specs
+    with this loader keeps every scalar JSON-safe.
+    """
+
+
+_NoTimestampSafeLoader.yaml_implicit_resolvers = {
+    key: [(tag, regexp) for tag, regexp in resolvers if tag != "tag:yaml.org,2002:timestamp"]
+    for key, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+
+
+def yaml_load_safe(content: str):
+    """Parse YAML with timestamps preserved as strings (JSON-safe)."""
+    return yaml.load(content, Loader=_NoTimestampSafeLoader)
+
 def setup_logging(debug: bool = False):
     """
     Configure logging for the application.
@@ -196,7 +218,7 @@ def _spec_cache_store(url: str, spec: Dict) -> None:
     try:
         path = _spec_cache_path(url)
         with open(path + ".tmp", "w") as f:
-            json.dump(spec, f)
+            json.dump(spec, f, default=str)
         os.replace(path + ".tmp", path)
         logger.debug(f"Cached spec for {url} at {path}")
     except OSError as exc:
@@ -226,7 +248,7 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                 logger.debug(f"Using {spec_format.upper()} parser based on OPENAPI_SPEC_FORMAT env var")
                 if spec_format == "yaml":
                     try:
-                        spec = yaml.safe_load(content)
+                        spec = yaml_load_safe(content)
                         logger.debug(f"Parsed as YAML from {url}")
                     except yaml.YAMLError as ye:
                         logger.error(f"YAML parsing failed: {ye}. Raw content: {content[:500]}...")
@@ -252,7 +274,7 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                     logger.debug(f"Parsed as JSON from {url}")
                 except json.JSONDecodeError:
                     try:
-                        spec = yaml.safe_load(content)
+                        spec = yaml_load_safe(content)
                         logger.debug(f"Parsed as YAML from {url}")
                     except yaml.YAMLError as ye:
                         logger.error(f"YAML parsing failed: {ye}. Raw content: {content[:500]}...")
