@@ -43,7 +43,7 @@ Full environment-variable reference is in [Environment Variables](#environment-v
 - [Environment Variables](#environment-variables)
 - [Verified Clients & Live Results (2026-06-12)](#verified-clients--live-results-2026-06-12)
   - [Tips](#tips)
-- [Examples](#examples) — Glama, Fly.io, Render, Slack, GetZep, Virustotal, Notion, Asana, APIs.guru, NetBox, Box, WolframAlpha (collapsed)
+- [Examples](#examples) — Glama, Fly.io, Render, Slack, GetZep, Virustotal, Notion, Asana, APIs.guru, NetBox, Box, WolframAlpha, WordPress (collapsed)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
@@ -857,6 +857,43 @@ Letta runs agents on a server, so attachment differs by deployment:
 - **Letta Cloud** rejects stdio and needs a **remote streamable-HTTP** MCP URL behind authentication.
 
 Both were verified live (an agent autonomously called `get_v1_attributes` from the Glama spec through the proxy). Full setup for both paths, including the supergateway wrapper and the security note for the Cloud endpoint, is in [`examples/letta/README.md`](examples/letta/README.md).
+
+</details>
+
+<details>
+<summary><b>WordPress Example</b> — publish to a real WordPress blog from any MCP agent</summary>
+
+This example turns the WordPress REST API into MCP tools so an agent can **create, read, update, and trash blog posts**. It is the example behind a real-world demonstration: a fleet of agent CLIs published to the live blog at **[matthewhand.mywebcommunity.org](https://matthewhand.mywebcommunity.org/)** through this proxy — see the write-up [*“Turning Any API into Agent Tools”*](https://matthewhand.mywebcommunity.org/2026/06/12/turning-any-api-into-agent-tools-a-real-world-test-of-mcp-openapi-proxy/), itself posted via the proxy.
+
+Example config — `examples/wordpress-claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "wordpress": {
+      "command": "uvx",
+      "args": ["mcp-openapi-proxy"],
+      "env": {
+        "OPENAPI_SPEC_URL": "https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/main/examples/wordpress-openapi.json",
+        "SERVER_URL_OVERRIDE": "https://your-site.example.com/wp-json",
+        "EXTRA_HEADERS": "Authorization: Basic BASE64_OF_USERNAME_COLON_APPLICATION_PASSWORD",
+        "IGNORE_SSL_TOOLS": "false",
+        "TOOL_WHITELIST": "/wp/v2/posts"
+      }
+    }
+  }
+}
+```
+
+Exposed tools (from the bundled `examples/wordpress-openapi.json`): `get_wp_v2_posts`, `post_wp_v2_posts` (create), `get_wp_v2_posts_by_id`, `post_wp_v2_posts_by_id` (update), and `delete_wp_v2_posts_by_id` (trash) — the full post lifecycle.
+
+**Auth — use a WordPress *Application Password*, not your login password.** WordPress REST rejects login passwords for Basic auth. In `wp-admin → Users → (your user) → Application Passwords`, create one, then base64-encode `username:application-password` for the `EXTRA_HEADERS` value:
+
+```bash
+printf 'myuser:xxxx xxxx xxxx xxxx xxxx xxxx' | base64 -w0
+```
+
+Tips: set `IGNORE_SSL_TOOLS=true` only if your host serves a self-signed/mismatched cert; give each agent its own (revocable) application password; keep `TOOL_WHITELIST=/wp/v2/posts` so the agent can touch only posts.
 
 </details>
 
