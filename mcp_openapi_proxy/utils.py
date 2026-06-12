@@ -224,7 +224,8 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
     """
     headers = {}
     api_key = os.getenv("API_KEY")
-    auth_type = os.getenv("API_AUTH_TYPE", "Bearer").lower()
+    auth_type_raw = os.getenv("API_AUTH_TYPE", "Bearer")
+    auth_type = auth_type_raw.lower()
     if api_key:
         if auth_type == "bearer":
             logger.debug(f"Using API_KEY as Bearer token.") # Avoid logging key prefix
@@ -236,8 +237,10 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
             key_name = os.getenv("API_AUTH_HEADER", "Authorization")
             headers[key_name] = api_key
             logger.debug(f"Using API_KEY as API-Key in header '{key_name}'.") # Avoid logging key prefix
-        else:
-            logger.warning(f"Unsupported API_AUTH_TYPE: {auth_type}")
+        elif auth_type:
+            # Custom scheme prefix, e.g. API_AUTH_TYPE=Token for NetBox -> "Authorization: Token <key>"
+            headers["Authorization"] = f"{auth_type_raw} {api_key}"
+            logger.debug(f"Using API_KEY with custom auth scheme '{auth_type_raw}'.")
     # TODO: Add logic to check operation['security'] and spec['components']['securitySchemes']
     #       to potentially override or supplement env var based auth.
     return headers
