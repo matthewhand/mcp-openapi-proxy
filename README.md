@@ -293,6 +293,9 @@ After starting the service refer to the [JSON-RPC Testing](#json-rpc-testing) se
 
 ### GetZep Example
 
+> **Note (2026):** GetZep's hosted endpoint (`api.getzep.com`) returns **401** for previously-working keys — the hosted free tier no longer accepts API keys. The example now targets a **self-hosted Zep CE**: see `examples/zep-ce/docker-compose.yml` (zep built from source tag v1.0.2 + `pgvector/pgvector:pg17`; the delisted `zepai/zep` image must be rebuilt via the official `Dockerfile.ce`). Auth quirk: Zep's scheme is literally `Api-Key`, which collides with the proxy's special `api-key` mode — use `API_AUTH_TYPE=api-key` with `API_KEY="Api-Key <your-secret>"`. Live-verified: 8 tools via `TOOL_WHITELIST=/sessions`; session create + read-back through the bridge.
+
+
 ![image](https://github.com/user-attachments/assets/9a4fdabb-fa3d-4626-a50f-438147eadc9f)
 
 GetZep offers a free cloud API for memory management with detailed endpoints. Since GetZep did not provide an official OpenAPI specification, this project includes a generated spec hosted on GitHub for convenience. Users can similarly generate OpenAPI specs for any REST API and reference them locally (e.g. `file:///path/to/spec.json`). Obtain an API key from [GetZep's documentation](https://docs.getzep.com/).
