@@ -1,0 +1,15 @@
+{
+    "mcpServers": {
+        "wordpress": {
+            "command": "uvx",
+            "args": ["mcp-openapi-proxy"],
+            "env": {
+                "OPENAPI_SPEC_URL": "https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/main/examples/wordpress-openapi.json",
+                "SERVER_URL_OVERRIDE": "https://your-site.example.com/wp-json",
+                "EXTRA_HEADERS": "Authorization: Basic BASE64_OF_USERNAME_COLON_APPLICATION_PASSWORD",
+                "IGNORE_SSL_TOOLS": "false",
+                "TOOL_WHITELIST": "/wp/v2/posts"
+            }
+        }
+    }
+}
