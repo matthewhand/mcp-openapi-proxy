@@ -361,11 +361,17 @@ def detect_response_type(response_text: str) -> Tuple[types.TextContent, str]:
 def get_additional_headers() -> Dict[str, str]:
     """
     Parse additional headers from EXTRA_HEADERS environment variable.
+
+    Headers are separated by real newlines or by the literal two-character
+    sequence "\\n" (for configs that cannot express real newlines, e.g.
+    claude_desktop_config.json env values). See issue #17.
     """
     headers = {}
     extra_headers = os.getenv("EXTRA_HEADERS")
     if extra_headers:
         logger.debug(f"Parsing EXTRA_HEADERS: {extra_headers}")
+        # Treat literal "\n" sequences as separators in addition to real newlines.
+        extra_headers = extra_headers.replace("\\n", "\n")
         for line in extra_headers.splitlines():
             line = line.strip()
             if ":" in line:

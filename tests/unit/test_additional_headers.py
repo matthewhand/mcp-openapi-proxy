@@ -56,6 +56,28 @@ def test_get_additional_headers_multiple(mock_env):
     headers = get_additional_headers()
     assert headers == {"X-Test": "Value", "X-Another": "More"}, "Multiple headers not parsed correctly"
 
+def test_get_additional_headers_literal_backslash_n_separator(mock_env):
+    # Literal two-character "\n" sequence (e.g. from configs that cannot
+    # express real newlines) must also act as a header separator. See issue #17.
+    os.environ["EXTRA_HEADERS"] = "X-Test: Value\\nX-Another: More"
+    headers = get_additional_headers()
+    assert headers == {"X-Test": "Value", "X-Another": "More"}, \
+        "Multiple headers separated by literal \\n not parsed correctly"
+
+def test_get_additional_headers_literal_backslash_n_value_with_colon(mock_env):
+    # Values containing colons (tokens, cookies) must survive splitting.
+    os.environ["EXTRA_HEADERS"] = "x-csrf-token: abc:123\\nCookie: session=a:b"
+    headers = get_additional_headers()
+    assert headers == {"x-csrf-token": "abc:123", "Cookie": "session=a:b"}, \
+        "Header values containing colons not parsed correctly with literal \\n separator"
+
+def test_get_additional_headers_mixed_separators(mock_env):
+    # Real newlines and literal "\n" sequences can be mixed.
+    os.environ["EXTRA_HEADERS"] = "X-One: 1\nX-Two: 2\\nX-Three: 3"
+    headers = get_additional_headers()
+    assert headers == {"X-One": "1", "X-Two": "2", "X-Three": "3"}, \
+        "Mixed real-newline and literal \\n separators not parsed correctly"
+
 @pytest.mark.asyncio
 async def test_lowlevel_dispatcher_with_headers(mock_env, mock_requests, monkeypatch):
     os.environ["EXTRA_HEADERS"] = "X-Custom: Foo"

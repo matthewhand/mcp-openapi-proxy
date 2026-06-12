@@ -89,7 +89,7 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `API_AUTH_TYPE`: (Optional) Overrides the default `Bearer` Authorization scheme. `api-key` sends the key in the header named by `API_AUTH_HEADER`; any other value is used as a custom scheme prefix (e.g. `Token` for NetBox → `Authorization: Token <key>`).
 - `STRIP_PARAM`: (Optional) JMESPath expression to strip unwanted parameters (e.g. `token` for Slack).
 - `DEBUG`: (Optional) Enables verbose debug logging when set to "true", "1", or "yes".
-- `EXTRA_HEADERS`: (Optional) Additional HTTP headers in "Header: Value" format (one per line) to attach to outgoing API requests.
+- `EXTRA_HEADERS`: (Optional) Additional HTTP headers in "Header: Value" format to attach to outgoing API requests. Separate multiple headers with newlines or the literal `\n` sequence (handy in JSON configs), e.g. `"X-Csrf-Token: abc\nCookie: session=xyz"`.
 - `SERVER_URL_OVERRIDE`: (Optional) Overrides the base URL from the OpenAPI specification when set, useful for custom deployments.
 - `TOOL_NAME_MAX_LENGTH`: (Optional) Truncates tool names to a max length.
 - Additional Variable: `OPENAPI_SPEC_URL_<hash>` – a variant for unique per-test configurations (falls back to `OPENAPI_SPEC_URL`).
