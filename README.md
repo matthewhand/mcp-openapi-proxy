@@ -208,7 +208,7 @@ Render offers infrastructure hosting that can be managed via an API. The provide
 Retrieve the Render OpenAPI specification:
 
 ```bash
-curl https://api-docs.render.com/openapi/6140fb3daeae351056086186
+curl https://api-docs.render.com/openapi/render-public-api-1.json
 ```
 
 Ensure the response is a valid OpenAPI document.
@@ -224,7 +224,7 @@ Add the following configuration to your MCP ecosystem settings:
             "command": "uvx",
             "args": ["mcp-openapi-proxy"],
             "env": {
-                "OPENAPI_SPEC_URL": "https://api-docs.render.com/openapi/6140fb3daeae351056086186",
+                "OPENAPI_SPEC_URL": "https://api-docs.render.com/openapi/render-public-api-1.json",
                 "TOOL_WHITELIST": "/services,/maintenance",
                 "API_KEY": "your_render_token_here"
             }
@@ -238,7 +238,7 @@ Add the following configuration to your MCP ecosystem settings:
 Launch the proxy with your Render configuration:
 
 ```bash
-OPENAPI_SPEC_URL="https://api-docs.render.com/openapi/6140fb3daeae351056086186" TOOL_WHITELIST="/services,/maintenance" API_KEY="your_render_token_here" uvx mcp-openapi-proxy
+OPENAPI_SPEC_URL="https://api-docs.render.com/openapi/render-public-api-1.json" TOOL_WHITELIST="/services,/maintenance" API_KEY="your_render_token_here" uvx mcp-openapi-proxy
 ```
 
 Then refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
