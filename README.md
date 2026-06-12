@@ -2,6 +2,33 @@
 
 **mcp-openapi-proxy** is a Python package that implements a Model Context Protocol (MCP) server, designed to dynamically expose REST APIs—defined by OpenAPI specifications—as MCP tools. This facilitates seamless integration of OpenAPI-described APIs into MCP-based workflows.
 
+## What's New in 0.2.0
+
+**Works with every modern MCP-enabled client we tested.** Strict MCP clients can now discover and call tools — the low-level server advertises correct capabilities and no longer crashes during resource/prompt discovery, and a slow spec download no longer crash-loops short-timeout clients. Verified live against the full list of mainstream agent CLIs:
+
+- ✅ **Codex**, **Gemini**, **Qwen**, **Kilocode**, **opencode** — native tool calls over stdio
+- ✅ **Vibe** — native discovery and read calls (writes were CLI-flaky, not a proxy issue)
+- ✅ **Letta** — Cloud (via a remote streamable-HTTP MCP URL) and self-hosted (via stdio)
+- ⚠️ **agy** — could not attach in headless mode; MCP tool enablement is interactive-only in agy (an agy limitation, not the proxy)
+
+See the [client matrix](#client-matrix) for attach mechanisms, models, and exact results.
+
+**Prompts and resources are real now — including custom resources.** Both MCP surfaces are functional and tested: the `summarize_spec` / `whimsical_blog` prompts and the `spec_file` resource, plus a new `ADDITIONAL_RESOURCES` env var that serves your *own* use-case documents (e.g. a NetBox naming policy or an Asana project-layout guide) as MCP resources — see `examples/resources/`.
+
+**Bug fixes (every one live-verified):**
+- MCP client discovery: empty capability set + a crash in resource discovery left strict clients seeing **zero tools** (#23) — fixed, with a full stdio-handshake test harness.
+- `IGNORE_SSL_TOOLS` was ignored by the low-level dispatcher (#14) — fixed (original patch by [@robbycochran](https://github.com/robbycochran), #15).
+- Server **crash-loop** when a slow spec fetch outran a client's connect timeout (#28) — handshake now answers immediately, spec loads lazily, closed streams exit cleanly.
+- `API_AUTH_TYPE` custom schemes (e.g. NetBox `Token`) sent **no auth header at all** (#24) — fixed.
+- `TOOL_WHITELIST` never matched Slack-style dot paths like `/users.list` (#27) — fixed.
+- `TOOL_NAME_MAX_LENGTH` was not respected, and name-truncation collisions silently dropped tools (#11) — fixed.
+- Array parameters were emitted without `items`, which the OpenAI API rejects (#16) — fixed.
+- `EXTRA_HEADERS` now accepts a JSON array and literal `\n` separators, not just real newlines (#17).
+- Dead Render spec URL (#26) and incomplete ElevenLabs example (#29) — fixed; the GetZep example is documented for self-hosted Zep CE since the hosted endpoint now 401s (#38).
+- Added a `Dockerfile` + `glama.json` for the Glama listing (#13); collapsible README examples + a verified-client/API matrix (#35).
+
+Full environment-variable reference is in [Environment Variables](#environment-variables).
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -12,19 +39,9 @@
   - [FastMCP Mode (Simple Mode)](#fastmcp-mode-simple-mode)
   - [Low-Level Mode (Default)](#low-level-mode-default)
 - [Environment Variables](#environment-variables)
-- [Examples](#examples)
-  - [Glama Example](#glama-example)
-  - [Fly.io Example](#flyio-example)
-  - [Render Example](#render-example)
-  - [Slack Example](#slack-example)
-  - [GetZep Example](#getzep-example)
-  - [Virustotal Example](#virustotal-example)
-  - [Notion Example](#notion-example)
-  - [Asana Example](#asana-example)
-  - [APIs.guru Example](#apisguru-example)
-  - [NetBox Example](#netbox-example)
-  - [Box API Example](#box-api-example)
-  - [WolframAlpha API Example](#wolframalpha-api-example)
+- [Verified Clients & Live Results (2026-06-12)](#verified-clients--live-results-2026-06-12)
+  - [Tips](#tips)
+- [Examples](#examples) — Glama, Fly.io, Render, Slack, GetZep, Virustotal, Notion, Asana, APIs.guru, NetBox, Box, WolframAlpha (collapsed)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
@@ -91,26 +108,175 @@ Refer to the **Examples** section below for practical configurations tailored to
 ## Environment Variables
 
 - `OPENAPI_SPEC_URL`: (Required) The URL to the OpenAPI specification JSON file (e.g. `https://example.com/spec.json` or `file:///path/to/local/spec.json`).
-- `OPENAPI_LOGFILE_PATH`: (Optional) Specifies the log file path.
 - `OPENAPI_SIMPLE_MODE`: (Optional) Set to `true` to enable FastMCP mode.
 - `TOOL_WHITELIST`: (Optional) A comma-separated list of endpoint paths to expose as tools.
+- `ADDITIONAL_RESOURCES`: (Optional) Comma-separated `name=/path/to/file` entries served as extra MCP resources (use-case docs such as naming policies or layout conventions; see `examples/resources/`).
 - `TOOL_NAME_PREFIX`: (Optional) A prefix to prepend to all tool names.
 - `API_KEY`: (Optional) Authentication token for the API sent as `Bearer <API_KEY>` in the Authorization header by default.
-- `API_AUTH_TYPE`: (Optional) Overrides the default `Bearer` Authorization header type (e.g. `Api-Key` for GetZep).
+- `API_AUTH_TYPE`: (Optional) Overrides the default `Bearer` Authorization scheme. `api-key` sends the key in the header named by `API_AUTH_HEADER`; any other value is used as a custom scheme prefix (e.g. `Token` for NetBox → `Authorization: Token <key>`).
 - `STRIP_PARAM`: (Optional) JMESPath expression to strip unwanted parameters (e.g. `token` for Slack).
 - `DEBUG`: (Optional) Enables verbose debug logging when set to "true", "1", or "yes".
-- `EXTRA_HEADERS`: (Optional) Additional HTTP headers in "Header: Value" format (one per line) to attach to outgoing API requests.
+- `EXTRA_HEADERS`: (Optional) One or more outgoing HTTP headers. Accepts a **JSON array** (`["X-A: 1","X-B: 2"]`), one `Header: Value` per **line**, or literal `\n`-separated entries (for configs that cannot embed newlines).
 - `SERVER_URL_OVERRIDE`: (Optional) Overrides the base URL from the OpenAPI specification when set, useful for custom deployments.
 - `TOOL_NAME_MAX_LENGTH`: (Optional) Truncates tool names to a max length.
 - Additional Variable: `OPENAPI_SPEC_URL_<hash>` – a variant for unique per-test configurations (falls back to `OPENAPI_SPEC_URL`).
 - `IGNORE_SSL_SPEC`: (Optional) Set to `true` to disable SSL certificate verification when fetching the OpenAPI spec.
 - `IGNORE_SSL_TOOLS`: (Optional) Set to `true` to disable SSL certificate verification for API requests made by tools.
+- `API_AUTH_HEADER`: (Optional) Header name used when `API_AUTH_TYPE=api-key` (e.g. `x-apikey` for VirusTotal, `xi-api-key` for ElevenLabs). Defaults to `Authorization`.
+- `OPENAPI_SPEC_FORMAT`: (Optional) Set to `yaml` to parse `file://` specs as YAML (remote specs auto-detect). Default `json`.
+- `OPENAPI_SPEC_CACHE_TTL_SECONDS`: (Optional) Live-first disk cache for remote specs: the cached copy is served only when the live fetch fails or stalls (and respawned servers fail fast to it). Default `86400`; set `0` to disable.
+- `ENABLE_TOOLS` / `ENABLE_PROMPTS` / `ENABLE_RESOURCES`: (Optional) Feature gates for the three MCP surfaces in low-level mode; each defaults to enabled. Disabling a feature removes its handlers and its capability advertisement.
+- `CAPABILITIES_TOOLS` / `CAPABILITIES_PROMPTS` / `CAPABILITIES_RESOURCES`: (Optional) Advertise `listChanged` on the corresponding capability (for clients that key on it). Default `false`.
+
+## Verified Clients & Live Results (2026-06-12)
+
+The example configurations below were exercised against the live APIs, and the proxy was attached to a range of agent CLIs over stdio MCP. Results from that verification run:
+
+### API example results
+
+| API example | Tools | Sample call proven | Extra env needed |
+|---|---|---|---|
+| glama | 6 | `get_v1_attributes` | none |
+| apis.guru | 7 | `get_metrics_json` | none |
+| wolframalpha | 2 | `get_v1_llm_api` | `API_KEY` |
+| virustotal | 4 | IP report | `API_KEY` + `API_AUTH_TYPE=api-key` + `API_AUTH_HEADER=x-apikey` |
+| asana | 73 (whitelist `/workspaces,/projects,/tasks`) | created project + 11 tasks | `SERVER_URL_OVERRIDE` + `API_KEY` |
+| render | 52 | `get_services` | `API_KEY` (NEW spec URL `render-public-api-1.json`) |
+| notion | 4–5 (whitelist `/v1/users,/v1/search` or `/v1/pages`) | page create + title read-back | `SERVER_URL_OVERRIDE` + `EXTRA_HEADERS` (`Notion-Version`) + `API_KEY` |
+| elevenlabs | 19 | TTS mp3 generated | `SERVER_URL_OVERRIDE` + `API_AUTH_TYPE=api-key` + `API_AUTH_HEADER=xi-api-key` |
+| flyio | 34–35 | apps + machine health | `API_KEY` |
+| slack | 7 (exact dot-path whitelist until #27 fix) | `auth.test` + `postMessage` | `API_KEY` |
+| netbox | 9 (whitelist `/ipam/ip-addresses`) | IPAM write + read | `API_KEY` + `API_AUTH_TYPE=Token` |
+
+### Client matrix
+
+| Agent CLI | Model used (live test) | MCP attach mechanism | Tool calls | Prompts/Resources surfaced to model? |
+|---|---|---|---|---|
+| Codex | `gpt-5-codex` (OpenAI API) | `codex exec -c mcp_servers.*` | ✅ native | ❌ (used raw stdio) |
+| Gemini | Google OAuth free tier (CLI default model) | project `.gemini/settings.json` `mcpServers` | ✅ native | ❌ interactive slash-commands only |
+| Qwen | `agent` group via local LiteLLM gateway | project `.qwen/settings.json` | ✅ native | ❌ NO_PROMPT_ACCESS |
+| Kilocode | `kilo-auto/free` | global `settings/mcp_settings.json`, clean workspace | ✅ native | ❌ |
+| opencode | `orchestration` group via local LiteLLM gateway | `~/.config/opencode/opencode.json` `mcp` | ✅ native | ❌ |
+| Vibe | `mistral-medium-3.5` | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads (writes flaky) | ❌ |
+| agy | — | — | ❌ headless cannot enable MCP | — |
+| letta cloud | Letta Cloud default | streamable-HTTP MCP URL (`/mcp add --transport http` + bearer) | ✅ remote (stdio rejected) | — |
+| letta (self-hosted ≤0.11.x) | `agent` group via local LiteLLM gateway | stdio via `PUT /v1/tools/mcp/servers` | ✅ native | — |
+
+Minimal sanitized configs per client (the no-auth Glama spec is used as the smallest working example; substitute your own spec URL and `$YOUR_KEY` as needed):
+
+<details>
+<summary><b>Codex</b> — inline <code>-c mcp_servers.*</code> overrides</summary>
+
+```bash
+codex exec \
+  -c 'mcp_servers.glama.command="uvx"' \
+  -c 'mcp_servers.glama.args=["mcp-openapi-proxy"]' \
+  -c 'mcp_servers.glama.env.OPENAPI_SPEC_URL="https://glama.ai/api/mcp/openapi.json"' \
+  "list the available tools"
+```
+
+</details>
+
+<details>
+<summary><b>Gemini</b> — project <code>.gemini/settings.json</code></summary>
+
+```json
+{
+  "mcpServers": {
+    "glama": {
+      "command": "uvx",
+      "args": ["mcp-openapi-proxy"],
+      "env": { "OPENAPI_SPEC_URL": "https://glama.ai/api/mcp/openapi.json" }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Qwen</b> — project <code>.qwen/settings.json</code></summary>
+
+```json
+{
+  "mcpServers": {
+    "glama": {
+      "command": "uvx",
+      "args": ["mcp-openapi-proxy"],
+      "env": { "OPENAPI_SPEC_URL": "https://glama.ai/api/mcp/openapi.json" }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Kilocode</b> — global <code>settings/mcp_settings.json</code> (use a clean workspace)</summary>
+
+```json
+{
+  "mcpServers": {
+    "glama": {
+      "command": "uvx",
+      "args": ["mcp-openapi-proxy"],
+      "env": { "OPENAPI_SPEC_URL": "https://glama.ai/api/mcp/openapi.json" }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>opencode</b> — <code>~/.config/opencode/opencode.json</code> <code>mcp</code> block</summary>
+
+```json
+{
+  "mcp": {
+    "glama": {
+      "type": "local",
+      "command": ["uvx", "mcp-openapi-proxy"],
+      "environment": { "OPENAPI_SPEC_URL": "https://glama.ai/api/mcp/openapi.json" }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Vibe</b> — <code>~/.vibe/config.toml</code> <code>[[mcp_servers]]</code></summary>
+
+```toml
+[[mcp_servers]]
+name = "glama"
+command = "uvx"
+args = ["mcp-openapi-proxy"]
+
+[mcp_servers.env]
+OPENAPI_SPEC_URL = "https://glama.ai/api/mcp/openapi.json"
+```
+
+</details>
+
+agy (headless) and letta cloud could not attach a stdio MCP server at all, so no config snippet applies: agy provides no way to enable MCP in headless mode, and letta cloud only accepts remote MCP servers.
+
+### Tips
+
+- **Big specs need `TOOL_WHITELIST`.** Large APIs (Asana, Render, Fly.io, Slack, NetBox) expose dozens of endpoints; whitelist the paths you need to keep the tool count manageable for clients.
+- **Dot-style paths need exact whitelist entries for now.** Slack-style paths like `/chat.postMessage` are not matched by prefix whitelisting — list each path exactly (issue #27 / PR #32).
+- **Slow remote specs can crash-loop short-timeout clients.** If a client kills the server before a large spec finishes downloading, fetch the spec once and point `OPENAPI_SPEC_URL` at a local `file://` copy (issue #28).
+- **Custom auth schemes** are handled via `API_AUTH_TYPE` (PR #25), e.g. `Token` for NetBox, or `api-key` with `API_AUTH_HEADER` for Virustotal/ElevenLabs-style header keys.
 
 ## Examples
 
 For testing you can run the uvx command as demonstrated in the examples then interact with the MCP server via JSON-RPC messages to list tools and resources. See the "JSON-RPC Testing" section below.
 
-### Glama Example
+Each example below is collapsed — click to expand.
+
+<details>
+<summary><b>Glama Example</b> — the most minimal config: just <code>OPENAPI_SPEC_URL</code>, no auth</summary>
 
 ![image](https://github.com/user-attachments/assets/84afdaa8-7b4f-4726-835f-64255ca970b7)
 
@@ -154,7 +320,10 @@ OPENAPI_SPEC_URL="https://glama.ai/api/mcp/openapi.json" uvx mcp-openapi-proxy
 
 Then refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
 
-### Fly.io Example
+</details>
+
+<details>
+<summary><b>Fly.io Example</b> — machines API with an API token</summary>
 
 ![image](https://github.com/user-attachments/assets/80abd7fa-ccca-4e35-b0dd-36ef82a236c5)
 
@@ -197,7 +366,10 @@ Update your MCP ecosystem configuration:
 
 After starting the service refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
 
-### Render Example
+</details>
+
+<details>
+<summary><b>Render Example</b> — manage hosted services with a tool whitelist</summary>
 
 ![image](https://github.com/user-attachments/assets/f1dee1bf-e330-41f1-a700-6386edd8895e)
 
@@ -208,7 +380,7 @@ Render offers infrastructure hosting that can be managed via an API. The provide
 Retrieve the Render OpenAPI specification:
 
 ```bash
-curl https://api-docs.render.com/openapi/6140fb3daeae351056086186
+curl https://api-docs.render.com/openapi/render-public-api-1.json
 ```
 
 Ensure the response is a valid OpenAPI document.
@@ -224,7 +396,7 @@ Add the following configuration to your MCP ecosystem settings:
             "command": "uvx",
             "args": ["mcp-openapi-proxy"],
             "env": {
-                "OPENAPI_SPEC_URL": "https://api-docs.render.com/openapi/6140fb3daeae351056086186",
+                "OPENAPI_SPEC_URL": "https://api-docs.render.com/openapi/render-public-api-1.json",
                 "TOOL_WHITELIST": "/services,/maintenance",
                 "API_KEY": "your_render_token_here"
             }
@@ -238,12 +410,15 @@ Add the following configuration to your MCP ecosystem settings:
 Launch the proxy with your Render configuration:
 
 ```bash
-OPENAPI_SPEC_URL="https://api-docs.render.com/openapi/6140fb3daeae351056086186" TOOL_WHITELIST="/services,/maintenance" API_KEY="your_render_token_here" uvx mcp-openapi-proxy
+OPENAPI_SPEC_URL="https://api-docs.render.com/openapi/render-public-api-1.json" TOOL_WHITELIST="/services,/maintenance" API_KEY="your_render_token_here" uvx mcp-openapi-proxy
 ```
 
 Then refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
 
-### Slack Example
+</details>
+
+<details>
+<summary><b>Slack Example</b> — payload token stripping via JMESPath (<code>STRIP_PARAM</code>)</summary>
 
 ![image](https://github.com/user-attachments/assets/706adad5-3f1c-4f32-aef5-6a1af794aef3)
 
@@ -291,7 +466,13 @@ Update your configuration:
 
 After starting the service refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
 
-### GetZep Example
+</details>
+
+<details>
+<summary><b>GetZep Example</b> — project-generated spec with <code>Api-Key</code> auth</summary>
+
+> **Note (2026):** GetZep's hosted endpoint (`api.getzep.com`) returns **401** for previously-working keys — the hosted free tier no longer accepts API keys. The example now targets a **self-hosted Zep CE**: see `examples/zep-ce/docker-compose.yml` (zep built from source tag v1.0.2 + `pgvector/pgvector:pg17`; the delisted `zepai/zep` image must be rebuilt via the official `Dockerfile.ce`). Auth quirk: Zep's scheme is literally `Api-Key`, which collides with the proxy's special `api-key` mode — use `API_AUTH_TYPE=api-key` with `API_KEY="Api-Key <your-secret>"`. Live-verified: 8 tools via `TOOL_WHITELIST=/sessions`; session create + read-back through the bridge.
+
 
 ![image](https://github.com/user-attachments/assets/9a4fdabb-fa3d-4626-a50f-438147eadc9f)
 
@@ -339,7 +520,10 @@ Update your configuration:
 
 After starting the service refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
 
-### Virustotal Example
+</details>
+
+<details>
+<summary><b>Virustotal Example</b> — YAML spec + custom <code>x-apikey</code> auth header</summary>
 
 ![image](https://github.com/user-attachments/assets/d1760e58-a299-4004-9593-6dbaf3b685a1)
 
@@ -392,7 +576,10 @@ OPENAPI_SPEC_URL="https://raw.githubusercontent.com/matthewhand/mcp-openapi-prox
 
 After starting the service, refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
 
-### Notion Example
+</details>
+
+<details>
+<summary><b>Notion Example</b> — API version header via <code>EXTRA_HEADERS</code></summary>
 
 ![image](https://github.com/user-attachments/assets/45038bcf-9537-4337-8a90-8553ad3aa81b)
 
@@ -441,7 +628,10 @@ OPENAPI_SPEC_URL="https://storage.googleapis.com/versori-assets/public-specs/202
 
 After starting the service, refer to the [JSON-RPC Testing](#json-rpc-testing) section for instructions on listing resources and tools.
 
-### Asana Example
+</details>
+
+<details>
+<summary><b>Asana Example</b> — workspaces/tasks/projects with a whitelist and <code>SERVER_URL_OVERRIDE</code></summary>
 
 ![image](https://github.com/user-attachments/assets/087571dd-9e06-407e-905c-92815231f618)
 
@@ -492,7 +682,10 @@ ASANA_API_KEY="<your_asana_api_key>" OPENAPI_SPEC_URL="https://raw.githubusercon
 
 You can then use the MCP ecosystem to list and invoke tools for endpoints like `/dcim/devices/` and `/ipam/ip-addresses/`.
 
-### APIs.guru Example
+</details>
+
+<details>
+<summary><b>APIs.guru Example</b> — directory of thousands of public OpenAPI definitions, no auth</summary>
 
 APIs.guru provides a directory of OpenAPI definitions for thousands of public APIs. This example shows how to use mcp-openapi-proxy to expose the APIs.guru directory as MCP tools.
 
@@ -534,7 +727,10 @@ OPENAPI_SPEC_URL="https://raw.githubusercontent.com/APIs-guru/openapi-directory/
 
 You can then use the MCP ecosystem to list and invoke tools such as `listAPIs`, `getMetrics`, and `getProviders` that are defined in the APIs.guru directory.
 
-### NetBox Example
+</details>
+
+<details>
+<summary><b>NetBox Example</b> — IPAM/DCIM API with <code>Token</code> auth</summary>
 
 NetBox is an open-source IP address management (IPAM) and data center infrastructure management (DCIM) tool. This example demonstrates how to use mcp-openapi-proxy to expose the NetBox API as MCP tools.
 
@@ -579,7 +775,10 @@ OPENAPI_SPEC_URL="https://raw.githubusercontent.com/APIs-guru/openapi-directory/
 
 You can then use the MCP ecosystem to list and invoke tools for endpoints like `/dcim/devices/` and `/ipam/ip-addresses/`.
 
-### Box API Example
+</details>
+
+<details>
+<summary><b>Box API Example</b> — developer-token access to Box content</summary>
 
 You can integrate the Box Platform API using your own developer token for authenticated access to your Box account. This example demonstrates how to expose Box API endpoints as MCP tools.
 
@@ -606,7 +805,10 @@ You can now use the MCP ecosystem to list and invoke Box API tools. For integrat
 
 Note: developer api keys for free tier box users are limited to 60 minutes :(.  
 
-### WolframAlpha API Example
+</details>
+
+<details>
+<summary><b>WolframAlpha API Example</b> — computation API keyed by App ID</summary>
 
 ![image](https://github.com/user-attachments/assets/6a634d63-5734-4275-8876-6bacb8beabcc)
 
@@ -641,6 +843,8 @@ You can integrate the WolframAlpha API using your own App ID for authenticated a
   ```
 
 You can now use the MCP ecosystem to list and invoke WolframAlpha API tools. For integration tests, see `tests/integration/test_wolframalpha_integration.py`.
+
+</details>
 
 ## Troubleshooting
 

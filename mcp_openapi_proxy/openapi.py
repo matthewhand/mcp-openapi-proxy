@@ -123,11 +123,18 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
     #       to potentially override or supplement env var based auth.
     return headers
 
+# Maps registered tool names to their operation details. Needed so that
+# names deduplicated after TOOL_NAME_MAX_LENGTH truncation (issue #11) can
+# still be resolved back to the right operation at call time.
+_REGISTERED_OPERATIONS: Dict[str, Dict] = {}
+
+
 def register_functions(spec: Dict) -> List[types.Tool]:
     """Register tools from OpenAPI spec."""
-    from .utils import is_tool_whitelisted # Keep import here to avoid circular dependency if utils imports openapi
+    from .utils import is_tool_whitelisted, deduplicate_tool_name # Keep import here to avoid circular dependency if utils imports openapi
 
     tools_list: List[types.Tool] = [] # Use a local list for registration
+    _REGISTERED_OPERATIONS.clear()
     logger.debug("Starting tool registration from OpenAPI spec.")
     if not spec:
         logger.error("OpenAPI spec is None or empty during registration.")
@@ -174,12 +181,17 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                     continue # Skip this tool
 
                 # --- Check for duplicate names ---
+                # Truncation via TOOL_NAME_MAX_LENGTH can make distinct
+                # operations collide on the same name; rename instead of
+                # silently dropping the tool (issue #11).
                 if function_name in registered_names:
-                    logger.warning(
-                        f"Skipping registration for '{raw_name}': "
-                        f"Duplicate tool name '{function_name}' detected."
-                    )
-                    continue # Skip this tool
+                    function_name = deduplicate_tool_name(function_name, registered_names)
+                    if not re.match(TOOL_NAME_REGEX, function_name):
+                        logger.error(
+                            f"Skipping registration for '{raw_name}': "
+                            f"Deduplicated name '{function_name}' does not match required pattern '{TOOL_NAME_REGEX}'."
+                        )
+                        continue # Skip this tool
 
                 description = operation.get('summary', operation.get('description', 'No description available'))
                 # Ensure description is a string
@@ -219,6 +231,13 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                             "type": schema_type,
                             "description": param_details.get('description', f"{param_in} parameter {param_name}")
                         }
+                        # Arrays must carry an items schema (required by JSON Schema
+                        # consumers such as the OpenAI API); fall back to string items.
+                        if schema_type == 'array':
+                            items_schema = param_schema.get('items')
+                            if not isinstance(items_schema, dict) or not items_schema:
+                                items_schema = {"type": "string"}
+                            input_schema['properties'][param_name]['items'] = items_schema
                         # Add format if available
                         if param_schema.get('format'):
                              input_schema['properties'][param_name]['format'] = param_schema.get('format')
@@ -255,7 +274,13 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                                body_schema = json_content['schema']
                                # If body schema is object with properties, merge them
                                if body_schema.get('type') == 'object' and 'properties' in body_schema:
-                                    input_schema['properties'].update(body_schema['properties'])
+                                    for prop_name, prop_schema in body_schema['properties'].items():
+                                         if isinstance(prop_schema, dict) and prop_schema.get('type') == 'array' and not isinstance(prop_schema.get('items'), dict):
+                                              # Ensure array properties carry items (required by
+                                              # consumers such as the OpenAI API).
+                                              prop_schema = dict(prop_schema)
+                                              prop_schema['items'] = {"type": "string"}
+                                         input_schema['properties'][prop_name] = prop_schema
                                     if 'required' in body_schema and isinstance(body_schema['required'], list):
                                          # Add required body properties, avoiding duplicates
                                          for req_prop in body_schema['required']:
@@ -277,6 +302,12 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                 )
                 tools_list.append(tool)
                 registered_names.add(function_name)
+                _REGISTERED_OPERATIONS[function_name] = {
+                    "path": path,
+                    "method": method.upper(),
+                    "operation": operation,
+                    "original_path": path,
+                }
                 logger.debug(f"Registered tool: {function_name} from {raw_name}") # Simplified log
 
             except Exception as e:
@@ -297,6 +328,13 @@ def register_functions(spec: Dict) -> List[types.Tool]:
 
 def lookup_operation_details(function_name: str, spec: Dict) -> Union[Dict, None]:
     """Look up operation details from OpenAPI spec by function name."""
+    # Names registered via register_functions (including names deduplicated
+    # after TOOL_NAME_MAX_LENGTH truncation) are resolved from the registry,
+    # since they cannot be regenerated from the spec alone.
+    registered = _REGISTERED_OPERATIONS.get(function_name)
+    if registered:
+        return dict(registered)
+
     if not spec or 'paths' not in spec:
         logger.warning("Spec is missing or has no 'paths' key in lookup_operation_details.")
         return None

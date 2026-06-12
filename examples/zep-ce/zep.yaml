@@ -1,0 +1,24 @@
+log:
+  level: info
+  format: console
+http:
+  host: 0.0.0.0
+  port: 8000
+  max_request_size: 5242880
+postgres:
+  user: postgres
+  password: postgres
+  host: db
+  port: 5432
+  database: postgres
+  schema_name: public
+  read_timeout: 30
+  write_timeout: 30
+  max_open_connections: 10
+carbon:
+  locale: en
+graphiti:
+  service_url: http://graphiti:8003
+api_secret: changeme-local-secret
+telemetry:
+  disabled: true

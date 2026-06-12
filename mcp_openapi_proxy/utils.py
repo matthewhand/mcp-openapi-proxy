@@ -21,6 +21,59 @@ def setup_logging(debug: bool = False):
     from .logging_setup import setup_logging as ls
     return ls(debug)
 
+def get_tool_name_max_length() -> Optional[int]:
+    """Parse TOOL_NAME_MAX_LENGTH from the environment.
+
+    Returns a positive int, or None when unset/invalid (invalid values are
+    logged and ignored gracefully).
+    """
+    max_length_env = os.getenv("TOOL_NAME_MAX_LENGTH")
+    if max_length_env:
+        try:
+            parsed_max_length = int(max_length_env)
+            if parsed_max_length > 0:
+                return parsed_max_length
+            logger.warning(f"Invalid TOOL_NAME_MAX_LENGTH env var: {max_length_env}. Ignoring.")
+        except ValueError:
+            logger.warning(f"Invalid TOOL_NAME_MAX_LENGTH env var: {max_length_env}. Ignoring.")
+    return None
+
+
+def effective_tool_name_limit() -> int:
+    """The actual cap applied to tool names: TOOL_NAME_MAX_LENGTH bounded by
+    the 64-char protocol limit."""
+    custom = get_tool_name_max_length()
+    protocol_max = 64
+    return min(custom, protocol_max) if custom is not None else protocol_max
+
+
+def deduplicate_tool_name(tool_name: str, registered_names) -> str:
+    """Return a unique variant of tool_name that stays within the effective
+    length limit.
+
+    When TOOL_NAME_MAX_LENGTH truncation makes two endpoints collide on the
+    same name, the second must not be dropped (issue #11); it gets a short
+    numeric suffix instead, with the base truncated to keep within the limit.
+    """
+    if tool_name not in registered_names:
+        return tool_name
+    limit = effective_tool_name_limit()
+    counter = 2
+    while True:
+        suffix = f"_{counter}"
+        if len(tool_name) + len(suffix) <= limit:
+            candidate = f"{tool_name}{suffix}"
+        else:
+            candidate = f"{tool_name[:max(0, limit - len(suffix))]}{suffix}"
+        if candidate not in registered_names:
+            logger.warning(
+                f"Tool name collision for '{tool_name}' (TOOL_NAME_MAX_LENGTH truncation); "
+                f"renamed to '{candidate}'."
+            )
+            return candidate
+        counter += 1
+
+
 def normalize_tool_name(raw_name: str, max_length: Optional[int] = None) -> str:
     """
     Convert an HTTP method and path into a normalized tool name, applying length limits.
@@ -68,16 +121,7 @@ def normalize_tool_name(raw_name: str, max_length: Optional[int] = None) -> str:
         # Determine the effective custom max length based on env var and argument
         effective_max_length: Optional[int] = max_length
         if effective_max_length is None:
-            max_length_env = os.getenv("TOOL_NAME_MAX_LENGTH")
-            if max_length_env:
-                try:
-                    parsed_max_length = int(max_length_env)
-                    if parsed_max_length > 0:
-                        effective_max_length = parsed_max_length
-                    else:
-                        logger.warning(f"Invalid TOOL_NAME_MAX_LENGTH env var: {max_length_env}. Ignoring.")
-                except ValueError:
-                    logger.warning(f"Invalid TOOL_NAME_MAX_LENGTH env var: {max_length_env}. Ignoring.")
+            effective_max_length = get_tool_name_max_length()
 
         # Protocol limit
         PROTOCOL_MAX_LENGTH = 64
@@ -112,10 +156,65 @@ def normalize_tool_name(raw_name: str, max_length: Optional[int] = None) -> str:
         logger.error(f"Error normalizing tool name '{raw_name}': {e}", exc_info=True)
         return "unknown_tool" # Return a default on unexpected error
 
+def _spec_cache_path(url: str) -> str:
+    import hashlib
+    cache_dir = os.path.join(
+        os.getenv("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "mcp-openapi-proxy"
+    )
+    os.makedirs(cache_dir, exist_ok=True)
+    return os.path.join(cache_dir, f"spec-{hashlib.sha256(url.encode()).hexdigest()[:24]}.json")
+
+
+def _spec_cache_ttl() -> int:
+    try:
+        return int(os.getenv("OPENAPI_SPEC_CACHE_TTL_SECONDS", "86400"))
+    except ValueError:
+        return 86400
+
+
+def _spec_cache_load(url: str) -> Optional[Dict]:
+    """Fallback copy of a previously fetched remote spec, if fresh enough."""
+    import time
+    if _spec_cache_ttl() <= 0 or url.startswith("file://"):
+        return None
+    path = _spec_cache_path(url)
+    try:
+        age = time.time() - os.path.getmtime(path)
+        if age < _spec_cache_ttl():
+            with open(path, "r") as f:
+                spec = json.load(f)
+            logger.debug(f"Spec cache hit for {url} (age {int(age)}s): {path}")
+            return spec
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def _spec_cache_store(url: str, spec: Dict) -> None:
+    if url.startswith("file://") or _spec_cache_ttl() <= 0:
+        return
+    try:
+        path = _spec_cache_path(url)
+        with open(path + ".tmp", "w") as f:
+            json.dump(spec, f)
+        os.replace(path + ".tmp", path)
+        logger.debug(f"Cached spec for {url} at {path}")
+    except OSError as exc:
+        logger.warning(f"Could not write spec cache: {exc}")
+
+
 def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
+    """Fetch and parse an OpenAPI specification (JSON or YAML) from a URL.
+
+    Live-first with cache fallback (issue #28): remote fetches are always
+    attempted first; a previously cached copy is used only when the live
+    retrieval fails or stalls. When a fallback exists we fail fast (single
+    attempt) instead of burning the full retry budget. Tune with
+    OPENAPI_SPEC_CACHE_TTL_SECONDS (default 86400; 0 disables caching).
     """
-    Fetch and parse an OpenAPI specification from a URL with retries.
-    """
+    fallback = _spec_cache_load(url)
+    if fallback is not None:
+        retries = 1  # fail fast to the cached copy instead of retrying for ~30s
     logger.debug(f"Fetching OpenAPI spec from URL: {url}")
     attempt = 0
     while attempt < retries:
@@ -158,11 +257,15 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                     except yaml.YAMLError as ye:
                         logger.error(f"YAML parsing failed: {ye}. Raw content: {content[:500]}...")
                         return None
+            _spec_cache_store(url, spec)
             return spec
         except requests.RequestException as e:
             attempt += 1
             logger.warning(f"Fetch attempt {attempt}/{retries} failed: {e}")
             if attempt == retries:
+                if fallback is not None:
+                    logger.warning(f"Live fetch failed for {url}; serving cached copy.")
+                    return fallback
                 logger.error(f"Failed to fetch spec from {url} after {retries} attempts: {e}")
                 return None
         except FileNotFoundError as e:
@@ -172,6 +275,9 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
             attempt += 1
             logger.warning(f"Unexpected error during fetch attempt {attempt}/{retries}: {e}")
             if attempt == retries:
+                if fallback is not None:
+                    logger.warning(f"Live fetch errored for {url}; serving cached copy.")
+                    return fallback
                 logger.error(f"Failed to process spec from {url} after {retries} attempts due to unexpected error: {e}")
                 return None
     return None
@@ -224,7 +330,8 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
     """
     headers = {}
     api_key = os.getenv("API_KEY")
-    auth_type = os.getenv("API_AUTH_TYPE", "Bearer").lower()
+    auth_type_raw = os.getenv("API_AUTH_TYPE", "Bearer")
+    auth_type = auth_type_raw.lower()
     if api_key:
         if auth_type == "bearer":
             logger.debug(f"Using API_KEY as Bearer token.") # Avoid logging key prefix
@@ -236,8 +343,10 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
             key_name = os.getenv("API_AUTH_HEADER", "Authorization")
             headers[key_name] = api_key
             logger.debug(f"Using API_KEY as API-Key in header '{key_name}'.") # Avoid logging key prefix
-        else:
-            logger.warning(f"Unsupported API_AUTH_TYPE: {auth_type}")
+        elif auth_type:
+            # Custom scheme prefix, e.g. API_AUTH_TYPE=Token for NetBox -> "Authorization: Token <key>"
+            headers["Authorization"] = f"{auth_type_raw} {api_key}"
+            logger.debug(f"Using API_KEY with custom auth scheme '{auth_type_raw}'.")
     # TODO: Add logic to check operation['security'] and spec['components']['securitySchemes']
     #       to potentially override or supplement env var based auth.
     return headers
@@ -294,26 +403,55 @@ def detect_response_type(response_text: str) -> Tuple[types.TextContent, str]:
 
 
 def get_additional_headers() -> Dict[str, str]:
+    """Parse the EXTRA_HEADERS environment variable into a header dict.
+
+    EXTRA_HEADERS already holds *multiple* headers; three input forms are
+    accepted (issue #17), preferred first:
+
+    1. JSON array  — ``["X-A: 1", "X-B: 2"]`` (the explicit, array-like form;
+       cleanest for JSON client configs that struggle with embedded newlines).
+    2. Real newlines — one ``Header: Value`` per line (original form).
+    3. Literal ``\\n`` sequences — for configs that cannot express real
+       newlines at all.
+
+    Only the value is split on the first colon, so header values may contain
+    colons (e.g. timestamps, URLs).
     """
-    Parse additional headers from EXTRA_HEADERS environment variable.
-    """
-    headers = {}
+    headers: Dict[str, str] = {}
     extra_headers = os.getenv("EXTRA_HEADERS")
-    if extra_headers:
-        logger.debug(f"Parsing EXTRA_HEADERS: {extra_headers}")
-        for line in extra_headers.splitlines():
-            line = line.strip()
-            if ":" in line:
-                key, value = line.split(":", 1)
-                key = key.strip()
-                value = value.strip()
-                if key and value:
-                    headers[key] = value
-                    logger.debug(f"Added header from EXTRA_HEADERS: '{key}'")
-                else:
-                    logger.warning(f"Skipping invalid header line in EXTRA_HEADERS: '{line}'")
-            elif line:
-                 logger.warning(f"Skipping malformed line in EXTRA_HEADERS (no ':'): '{line}'")
+    if not extra_headers:
+        return headers
+    logger.debug(f"Parsing EXTRA_HEADERS: {extra_headers}")
+
+    candidate = extra_headers.strip()
+    lines: List[str]
+    if candidate.startswith("["):
+        # Form 1: JSON array of "Header: Value" strings.
+        try:
+            parsed = json.loads(candidate)
+            if not isinstance(parsed, list):
+                raise ValueError("EXTRA_HEADERS JSON must be an array of strings")
+            lines = [str(item) for item in parsed]
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning(f"EXTRA_HEADERS looked like JSON but failed to parse ({exc}); "
+                           "falling back to newline parsing.")
+            lines = extra_headers.replace("\\n", "\n").splitlines()
+    else:
+        # Forms 2 & 3: real newlines and/or literal "\n" sequences.
+        lines = extra_headers.replace("\\n", "\n").splitlines()
+
+    for line in lines:
+        line = line.strip()
+        if ":" in line:
+            key, value = line.split(":", 1)
+            key, value = key.strip(), value.strip()
+            if key and value:
+                headers[key] = value
+                logger.debug(f"Added header from EXTRA_HEADERS: '{key}'")
+            else:
+                logger.warning(f"Skipping invalid header in EXTRA_HEADERS: '{line}'")
+        elif line:
+            logger.warning(f"Skipping malformed header in EXTRA_HEADERS (no ':'): '{line}'")
     return headers
 
 def is_tool_whitelist_set() -> bool:
@@ -359,9 +497,12 @@ def is_tool_whitelisted(endpoint: str) -> bool:
                  logger.error(f"Invalid regex pattern generated from whitelist entry '{entry}': {pattern}. Error: {e}")
                  continue # Skip this invalid pattern
         elif normalized_endpoint.startswith(normalized_entry):
-             # Simple prefix match (e.g., /users allows /users/123)
-             # Ensure it matches either the exact path or a path segment start
-             if normalized_endpoint == normalized_entry or normalized_endpoint.startswith(normalized_entry + "/"):
+             # Simple prefix match (e.g., /users allows /users/123).
+             # A segment may continue with "/" (REST style) or "." (Slack-style
+             # method paths such as /users.list), but /chat must not match /chatter.
+             if (normalized_endpoint == normalized_entry
+                     or normalized_endpoint.startswith(normalized_entry + "/")
+                     or normalized_endpoint.startswith(normalized_entry + ".")):
                   logger.debug(f"Endpoint '{normalized_endpoint}' matches whitelist prefix '{normalized_entry}' from entry '{entry}'")
                   return True
 
