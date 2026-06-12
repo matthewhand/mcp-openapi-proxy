@@ -1,0 +1,44 @@
+name: zep-ce
+
+services:
+  zep:
+    # zepai/zep was removed from Docker Hub; built locally from
+    # github.com/getzep/zep tag v1.0.2 (legacy CE) via Dockerfile.ce.
+    image: zep-ce:local
+    ports:
+      - "8010:8000"
+    volumes:
+      - ./zep.yaml:/app/zep.yaml
+    environment:
+      - ZEP_CONFIG_FILE=zep.yaml
+    networks:
+      - zep-network
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    # pgvector is REQUIRED: zep panics at startup if
+    # "CREATE EXTENSION IF NOT EXISTS vector" fails (src/lib/pg/db.go).
+    # postgres:17-alpine therefore cannot be reused.
+    image: pgvector/pgvector:pg17
+    restart: on-failure
+    shm_size: "128mb"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - zep-network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-d", "postgres", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - zep-db:/var/lib/postgresql/data
+
+volumes:
+  zep-db:
+
+networks:
+  zep-network:
+    driver: bridge

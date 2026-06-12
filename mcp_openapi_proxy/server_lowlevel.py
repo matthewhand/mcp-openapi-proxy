@@ -58,31 +58,142 @@ ENABLE_TOOLS = os.getenv("ENABLE_TOOLS", "true").lower() == "true"
 ENABLE_RESOURCES = os.getenv("ENABLE_RESOURCES", "false").lower() == "true"
 ENABLE_PROMPTS = os.getenv("ENABLE_PROMPTS", "false").lower() == "true"
 
-resources: List[types.Resource] = []
-prompts: List[types.Prompt] = []
-
-if ENABLE_RESOURCES:
-    resources.append(
-        types.Resource(
-            name="spec_file",
-            uri=AnyUrl("file:///openapi_spec.json"),
-            description="The raw OpenAPI specification JSON"
-        )
+# Resource and prompt DEFINITIONS are always present so the feature is
+# deterministically testable. Whether they are EXPOSED to clients is gated
+# separately by ENABLE_RESOURCES / ENABLE_PROMPTS, which control handler
+# registration (run_server) and capability advertisement (build_capabilities).
+resources: List[types.Resource] = [
+    types.Resource(
+        name="spec_file",
+        uri=AnyUrl("file:///openapi_spec.json"),
+        description="The raw OpenAPI specification JSON",
     )
+]
 
-if ENABLE_PROMPTS:
-    prompts.append(
-        types.Prompt(
-            name="summarize_spec",
-            description="Summarizes the OpenAPI specification",
-            arguments=[],
-            messages=lambda args: [
-                {"role": "assistant", "content": {"text": "This OpenAPI spec defines endpoints, parameters, and responses—a blueprint for developers to integrate effectively."}}
-            ]
+
+def _load_additional_resources() -> Dict[str, str]:
+    """Parse ADDITIONAL_RESOURCES ("name=/path/file.md,name2=/path2") into
+    {name: path} and register each as a listed resource. Lets a deployment
+    ship use-case documents (naming policies, layout conventions) alongside
+    the spec — see examples/resources/."""
+    mapping: Dict[str, str] = {}
+    for entry in os.getenv("ADDITIONAL_RESOURCES", "").split(","):
+        entry = entry.strip()
+        if not entry or "=" not in entry:
+            continue
+        name, path = (part.strip() for part in entry.split("=", 1))
+        if not name or not path:
+            continue
+        mapping[name] = path
+        resources.append(
+            types.Resource(
+                name=name,
+                uri=AnyUrl(f"file:///{name}"),
+                description=f"Additional resource served from {os.path.basename(path)}",
+            )
         )
+    return mapping
+
+
+ADDITIONAL_RESOURCES: Dict[str, str] = _load_additional_resources()
+
+prompts: List[types.Prompt] = [
+    types.Prompt(
+        name="summarize_spec",
+        description="Summarizes the OpenAPI specification",
+        arguments=[],
+    ),
+    types.Prompt(
+        name="whimsical_blog",
+        description="A whimsical WordPress blog-post starter inspired by this API",
+        arguments=[],
+    ),
+]
+
+# Prompt message templates, keyed by prompt name. Kept separate from the
+# types.Prompt metadata, which has no `messages` field — get_prompt() builds
+# the actual PromptMessage list from these.
+PROMPT_TEMPLATES: Dict[str, Any] = {
+    "summarize_spec": lambda args: [
+        types.PromptMessage(
+            role="assistant",
+            content=types.TextContent(
+                type="text",
+                text="This OpenAPI spec defines endpoints, parameters, and responses—a blueprint for developers to integrate effectively.",
+            ),
+        )
+    ],
+    "whimsical_blog": lambda args: [
+        types.PromptMessage(
+            role="assistant",
+            content=types.TextContent(
+                type="text",
+                text=(
+                    "Once upon a JSON, in a land of tilde keys and sticky semicolons, a pet AI "
+                    "chatbot discovered it could whisper to WordPress through a magic OpenAPI proxy. "
+                    "✨ Write the next whimsical chapter: how this humble API became a digital "
+                    "playground where agents publish tales at the speed of thought."
+                ),
+            ),
+        )
+    ],
+}
+
+
+def build_capabilities() -> "types.ServerCapabilities":
+    """Advertise a capability whenever its feature is enabled (ENABLE_*).
+
+    A capability object must be present for strict MCP clients (e.g. Gemini,
+    Codex, Qwen) to attempt list_tools/list_resources/list_prompts at all;
+    `listChanged` is a sub-detail controlled by the CAPABILITIES_* envvars.
+    """
+    return types.ServerCapabilities(
+        tools=types.ToolsCapability(listChanged=CAPABILITIES_TOOLS) if ENABLE_TOOLS else None,
+        prompts=types.PromptsCapability(listChanged=CAPABILITIES_PROMPTS) if ENABLE_PROMPTS else None,
+        resources=types.ResourcesCapability(listChanged=CAPABILITIES_RESOURCES) if ENABLE_RESOURCES else None,
     )
 
 openapi_spec_data: Optional[Dict[str, Any]] = None
+
+# Lazy spec loading (issue #28): the MCP handshake must be answered immediately,
+# even when OPENAPI_SPEC_URL is slow to download/parse. Clients with short
+# connect timeouts (observed: Kilocode, Vibe) otherwise hang up mid-handshake,
+# the proxy dies on the closed stream, the client respawns it — a crash loop.
+_spec_load_lock: Optional[asyncio.Lock] = None
+_spec_load_error: Optional[str] = None
+
+
+async def ensure_spec_loaded() -> Optional[Dict[str, Any]]:
+    """Fetch and register the OpenAPI spec on first use. Safe to call from any
+    handler; concurrent callers await the same fetch."""
+    global openapi_spec_data, _spec_load_lock, _spec_load_error
+    if openapi_spec_data is not None or _spec_load_error is not None:
+        return openapi_spec_data
+    if _spec_load_lock is None:
+        _spec_load_lock = asyncio.Lock()
+    async with _spec_load_lock:
+        if openapi_spec_data is not None or _spec_load_error is not None:
+            return openapi_spec_data
+        openapi_url = os.getenv("OPENAPI_SPEC_URL")
+        if not openapi_url:
+            _spec_load_error = "OPENAPI_SPEC_URL not set"
+            logger.critical(_spec_load_error)
+            return None
+        logger.debug(f"Lazily fetching OpenAPI spec from {openapi_url}...")
+        spec = await anyio.to_thread.run_sync(fetch_openapi_spec, openapi_url)
+        if not spec:
+            _spec_load_error = f"Failed to fetch or parse OpenAPI spec from {openapi_url}"
+            logger.critical(_spec_load_error)
+            return None
+        openapi_spec_data = spec
+        if ENABLE_TOOLS:
+            from mcp_openapi_proxy.handlers import register_functions
+            register_functions(spec)
+            logger.debug(f"Tools registered lazily: {[tool.name for tool in tools]}")
+            if not tools:
+                logger.critical("No valid tools registered from spec.")
+        return openapi_spec_data
+
 
 mcp = Server("OpenApiProxy-LowLevel")
 
@@ -92,6 +203,7 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
     """
     global openapi_spec_data
     try:
+        await ensure_spec_loaded()
         function_name = request.params.name
         logger.debug(f"Dispatcher received CallToolRequest for function: {function_name}")
         logger.debug(f"API_KEY: {os.getenv('API_KEY', '<not set>')[:5] + '...' if os.getenv('API_KEY') else '<not set>'}")
@@ -195,7 +307,6 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
         try:
             ignore_ssl_tools = os.getenv("IGNORE_SSL_TOOLS", "false").lower() in ("true", "1", "yes")
             verify_ssl_tools = not ignore_ssl_tools
-            logger.debug(f"Sending API request with SSL verification: {verify_ssl_tools} (IGNORE_SSL_TOOLS={ignore_ssl_tools})")
             response = requests.request(
                 method=method,
                 url=api_url,
@@ -229,33 +340,48 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
 
 async def list_tools(request: types.ListToolsRequest) -> types.ListToolsResult:
     logger.debug("Handling list_tools request - start")
+    await ensure_spec_loaded()
     logger.debug(f"Tools list length: {len(tools)}")
     return types.ListToolsResult(tools=tools)
 
 async def list_resources(request: types.ListResourcesRequest) -> types.ListResourcesResult:
-    logger.debug("Handling list_resources request")
-    from pydantic import AnyUrl
-    from types import SimpleNamespace
+    """List the spec_file resource plus any ADDITIONAL_RESOURCES entries.
+
+    The module-level `resources` list is always seeded with spec_file; the
+    guard below only matters if a caller mutated it at runtime.
+    """
+    logger.debug(f"Handling list_resources request ({len(resources)} resources)")
     if not resources:
-        logger.debug("Resources empty; populating default resource")
+        logger.debug("Resources empty; repopulating default resource")
         resources.append(
             types.Resource(
                 name="spec_file",
                 uri=AnyUrl("file:///openapi_spec.json"),
-                description="The raw OpenAPI specification JSON"
+                description="The raw OpenAPI specification JSON",
             )
         )
-    logger.debug(f"Resources list length: {len(resources)}")
-    class ResourcesHolder:
-        pass
-    result = ResourcesHolder()
-    result.resources = resources
-    return result
+    return types.ListResourcesResult(resources=resources)
 
 
 async def read_resource(request: types.ReadResourceRequest) -> types.ReadResourceResult:
     logger.debug(f"START read_resource for URI: {request.params.uri}")
     try:
+        uri_str = str(request.params.uri)
+        for name, path in ADDITIONAL_RESOURCES.items():
+            if uri_str == f"file:///{name}":
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        text = f.read()
+                except OSError as exc:
+                    text = f"Resource '{name}' unavailable: {exc}"
+                mime = "text/markdown" if path.endswith((".md", ".markdown")) else "text/plain"
+                return types.ReadResourceResult(
+                    contents=[
+                        types.TextResourceContents(
+                            uri=request.params.uri, text=text, mimeType=mime
+                        )
+                    ]
+                )
         openapi_url = os.getenv("OPENAPI_SPEC_URL")
         logger.debug(f"Got OPENAPI_SPEC_URL: {openapi_url}")
         if not openapi_url:
@@ -313,19 +439,20 @@ async def list_prompts(request: types.ListPromptsRequest) -> types.ListPromptsRe
 
 async def get_prompt(request: types.GetPromptRequest) -> types.GetPromptResult:
     logger.debug(f"Handling get_prompt request for {request.params.name}")
-    prompt = next((p for p in prompts if p.name == request.params.name), None)
-    if not prompt:
+    template = PROMPT_TEMPLATES.get(request.params.name)
+    if template is None:
         logger.error(f"Prompt '{request.params.name}' not found")
         return types.GetPromptResult(
+            description="Prompt not found",
             messages=[
                 types.PromptMessage(
-                    role="system",
-                    content={"text": "Prompt not found"}
+                    role="assistant",
+                    content=types.TextContent(type="text", text=f"Prompt '{request.params.name}' not found"),
                 )
-            ]
+            ],
         )
     try:
-        messages = prompt.messages(request.params.arguments or {})
+        messages = template(request.params.arguments or {})
         logger.debug(f"Generated messages: {messages}")
         return types.GetPromptResult(messages=messages)
     except Exception as e:
@@ -333,14 +460,21 @@ async def get_prompt(request: types.GetPromptRequest) -> types.GetPromptResult:
         return types.GetPromptResult(
             messages=[
                 types.PromptMessage(
-                    role="system",
-                    content={"text": f"Prompt error: {str(e)}"}
+                    role="assistant",
+                    content=types.TextContent(type="text", text=f"Prompt error: {str(e)}"),
                 )
-            ]
+            ],
         )
 
 
 def lookup_operation_details(function_name: str, spec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    # Resolve names recorded at registration time first: names deduplicated
+    # after TOOL_NAME_MAX_LENGTH truncation (issue #11) cannot be regenerated
+    # from the spec alone.
+    from mcp_openapi_proxy.openapi import _REGISTERED_OPERATIONS
+    registered = _REGISTERED_OPERATIONS.get(function_name)
+    if registered:
+        return dict(registered)
     if not spec or 'paths' not in spec:
         return None
     for path, path_item in spec['paths'].items():
@@ -354,16 +488,24 @@ def lookup_operation_details(function_name: str, spec: Dict[str, Any]) -> Option
     return None
 
 
+def _is_closed_stream_error(exc: BaseException) -> bool:
+    """True when the failure means the client hung up — retrying is pointless."""
+    if isinstance(exc, (anyio.ClosedResourceError, anyio.BrokenResourceError, anyio.EndOfStream)):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_is_closed_stream_error(sub) for sub in exc.exceptions)
+    return False
+
+
 async def start_server():
     logger.debug("Starting Low-Level MCP server...")
+    # Pre-warm the spec in the background: the handshake is served immediately
+    # while the (possibly slow) spec download proceeds (issue #28).
+    prewarm = asyncio.create_task(ensure_spec_loaded())
     async with stdio_server() as (read_stream, write_stream):
         while True:
             try:
-                capabilities = types.ServerCapabilities(
-                    tools=types.ToolsCapability(listChanged=True) if CAPABILITIES_TOOLS else None,
-                    prompts=types.PromptsCapability(listChanged=True) if CAPABILITIES_PROMPTS else None,
-                    resources=types.ResourcesCapability(listChanged=True) if CAPABILITIES_RESOURCES else None
-                )
+                capabilities = build_capabilities()
                 await mcp.run(
                     read_stream,
                     write_stream,
@@ -373,30 +515,27 @@ async def start_server():
                         capabilities=capabilities,
                     ),
                 )
-            except Exception as e:
+                logger.debug("MCP session ended normally; exiting.")
+                break
+            except BaseException as e:
+                if _is_closed_stream_error(e):
+                    # Client disconnected (e.g. short connect timeout while the
+                    # spec was still loading). Exit cleanly instead of spinning
+                    # on a dead stream — the client respawns us if it wants to.
+                    logger.warning("Client closed the stream; shutting down cleanly.")
+                    break
                 logger.error(f"MCP run crashed: {e}", exc_info=True)
                 await anyio.sleep(1)
+    prewarm.cancel()
 
 
 def run_server():
-    global openapi_spec_data
     try:
-        openapi_url = os.getenv('OPENAPI_SPEC_URL')
-        if not openapi_url:
+        if not os.getenv('OPENAPI_SPEC_URL'):
             logger.critical("OPENAPI_SPEC_URL environment variable is required but not set.")
             sys.exit(1)
-        openapi_spec_data = fetch_openapi_spec(openapi_url)
-        if not openapi_spec_data:
-            logger.critical("Failed to fetch or parse OpenAPI specification from OPENAPI_SPEC_URL.")
-            sys.exit(1)
-        logger.debug("OpenAPI specification fetched successfully.")
-        if ENABLE_TOOLS:
-            from mcp_openapi_proxy.handlers import register_functions
-            register_functions(openapi_spec_data)
-        logger.debug(f"Tools after registration: {[tool.name for tool in tools]}")
-        if ENABLE_TOOLS and not tools:
-            logger.critical("No valid tools registered. Shutting down.")
-            sys.exit(1)
+        # Spec fetch + tool registration are lazy (ensure_spec_loaded) so the
+        # MCP handshake is never blocked by a slow spec download (issue #28).
         if ENABLE_TOOLS:
             mcp.request_handlers[types.ListToolsRequest] = list_tools
             mcp.request_handlers[types.CallToolRequest] = dispatcher_handler

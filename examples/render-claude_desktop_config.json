@@ -6,7 +6,7 @@
         "mcp-openapi-proxy"
       ],
       "env": {
-        "OPENAPI_SPEC_URL": "https://api-docs.render.com/openapi/6140fb3daeae351056086186",
+        "OPENAPI_SPEC_URL": "https://api-docs.render.com/openapi/render-public-api-1.json",
         "TOOL_WHITELIST": "/services,/maintenance",
         "API_KEY": "your_render_token_here"
       }

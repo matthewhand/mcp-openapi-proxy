@@ -19,7 +19,7 @@ from mcp import types
 from mcp.server.fastmcp import FastMCP
 from mcp_openapi_proxy.logging_setup import logger
 from mcp_openapi_proxy.openapi import fetch_openapi_spec, build_base_url, handle_auth
-from mcp_openapi_proxy.utils import is_tool_whitelisted, normalize_tool_name, strip_parameters, get_additional_headers
+from mcp_openapi_proxy.utils import is_tool_whitelisted, normalize_tool_name, strip_parameters, get_additional_headers, deduplicate_tool_name
 import sys
 
 # Logger is now configured in logging_setup.py, just use it
@@ -30,6 +30,11 @@ logger.debug(f"Server CWD: {os.getcwd()}")
 mcp = FastMCP("OpenApiProxy-Fast")
 
 spec = None  # Global spec for resources
+
+# Maps function names produced by list_functions to their operations, so that
+# names deduplicated after TOOL_NAME_MAX_LENGTH truncation (issue #11) remain
+# callable via call_function.
+_FUNCTION_OPERATIONS: Dict[str, Dict] = {}
 
 @mcp.tool()
 def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
@@ -74,6 +79,7 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         logger.debug("No paths found in spec.")
         return json.dumps([])
     functions = {}
+    _FUNCTION_OPERATIONS.clear()
     for path, path_item in paths.items():
         logger.debug(f"Processing path: {path}")
         if not path_item:
@@ -96,8 +102,9 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
             raw_name = f"{method.upper()} {path}"
             function_name = normalize_tool_name(raw_name)
             if function_name in functions:
-                logger.debug(f"Skipping duplicate function name: {function_name}")
-                continue
+                # TOOL_NAME_MAX_LENGTH truncation can make distinct operations
+                # collide; rename instead of silently dropping (issue #11).
+                function_name = deduplicate_tool_name(function_name, functions)
             function_description = operation.get("summary", operation.get("description", "No description provided."))
             logger.debug(f"Registering function: {function_name} - {function_description}")
             input_schema = {
@@ -115,13 +122,22 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                 input_schema['required'].append(param_name)
             for param in operation.get("parameters", []):
                 param_name = param.get("name")
-                param_type = param.get("type", "string")
-                if param_type not in ["string", "integer", "boolean", "number"]:
+                param_schema = param.get("schema", {}) if isinstance(param.get("schema"), dict) else {}
+                param_type = param_schema.get("type", param.get("type", "string"))
+                if param_type not in ["string", "integer", "boolean", "number", "array"]:
                     param_type = "string"
-                input_schema["properties"][param_name] = {
+                prop = {
                     "type": param_type,
                     "description": param.get("description", f"{param.get('in', 'unknown')} parameter {param_name}")
                 }
+                if param_type == "array":
+                    # Arrays must carry an items schema (required by JSON Schema
+                    # consumers such as the OpenAI API); fall back to string items.
+                    items_schema = param_schema.get("items", param.get("items"))
+                    if not isinstance(items_schema, dict) or not items_schema:
+                        items_schema = {"type": "string"}
+                    prop["items"] = items_schema
+                input_schema["properties"][param_name] = prop
                 if param.get("required", False) and param_name not in input_schema['required']:
                     input_schema["required"].append(param_name)
             functions[function_name] = {
@@ -132,6 +148,11 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                 "operationId": operation.get("operationId"),
                 "original_name": raw_name,
                 "inputSchema": input_schema
+            }
+            _FUNCTION_OPERATIONS[function_name] = {
+                "path": path,
+                "method": method.upper(),
+                "operation": operation
             }
     functions["list_resources"] = {
         "name": "list_resources",
@@ -236,11 +257,16 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
         logger.error("Spec is None for call_function")
         return json.dumps({"error": "Failed to fetch or parse the OpenAPI specification"})
     logger.debug(f"Spec keys for call_function: {list(spec.keys())}")
-    function_def = None
+    # Names recorded by list_functions (including names deduplicated after
+    # TOOL_NAME_MAX_LENGTH truncation, issue #11) cannot be regenerated from
+    # the spec alone, so consult the recorded mapping first.
+    function_def = dict(_FUNCTION_OPERATIONS[function_name]) if function_name in _FUNCTION_OPERATIONS else None
     paths = spec.get("paths", {})
     logger.debug(f"Paths for function lookup: {list(paths.keys())}")
-    
+
     for path, path_item in paths.items():
+        if function_def:
+            break
         logger.debug(f"Checking path: {path}")
         for method, operation in path_item.items():
             logger.debug(f"Checking method: {method} for path: {path}")
