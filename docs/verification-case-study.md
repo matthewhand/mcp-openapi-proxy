@@ -49,15 +49,17 @@ sane tool count.
 
 | Client | Model (live test) | MCP attach mechanism | Tool calls | Prompts/resources to model |
 | --- | --- | --- | --- | --- |
-| Codex | gpt-5-codex | `codex exec -c mcp_servers.*` | ✅ native | ❌ (raw stdio only) |
-| Gemini | Google OAuth tier | project `.gemini/settings.json` | ✅ native | ❌ interactive slash-commands only |
-| Qwen | gateway model group | project `.qwen/settings.json` | ✅ native | ⚠️ prompts ✅ (slash cmds); resources ❌ † |
-| Kilocode | free auto model | global `mcp_settings.json` | ✅ native | ⚠️ resources ✅ (`access_mcp_resource`); prompts ❌ † |
-| opencode | gateway model group | `opencode.json` `mcp` | ✅ native | ❌ |
-| Vibe | mistral-medium-3.5 | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads | ❌ |
-| agy | — | — | ❌ headless can't enable MCP | — |
-| Letta (self-hosted) | gateway model group | stdio via `PUT /v1/tools/mcp/servers` | ✅ native | — |
-| Letta Cloud | Letta default | remote streamable-HTTP MCP URL | ✅ (stdio rejected) | — |
+| Codex | gpt-5-codex | `codex exec -c mcp_servers.*` | ✅ native | unknown ‡ |
+| Gemini | Google OAuth tier | project `.gemini/settings.json` | ✅ native | prompts: interactive slash only · resources: ❌ † |
+| Qwen | gateway model group | project `.qwen/settings.json` | ✅ native | prompts: ✅ (slash) · resources: ❌ † |
+| Kilocode | free auto model | global `mcp_settings.json` | ✅ native | prompts: ❌ · resources: ✅ (`access_mcp_resource`) † |
+| opencode | gateway model group | `opencode.json` `mcp` | ✅ native | unknown ‡ |
+| Vibe | mistral-medium-3.5 | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads | prompts: ❌ · resources: ❌ (tools-only) † |
+| agy | — | — | ❌ headless can't enable MCP | n/a |
+| Letta (self-hosted) | gateway model group | stdio via `PUT /v1/tools/mcp/servers` | ✅ native | unknown ‡ |
+| Letta Cloud | Letta default | remote streamable-HTTP MCP URL | ✅ (stdio rejected) | unknown ‡ |
+
+*† re-verified 2026-06-14 with advertising on (real binary). ‡ not yet re-tested under advertising-on — prior 0.2.0 prompt/resource results are **voided** (they were measured while the server defaulted to advertising neither). Tool-call results were unaffected and stand.*
 
 **Systemic finding:** every CLI tested could call MCP *tools* natively. Surfacing of
 MCP *prompts/resources* to the model is uneven across clients — but read the correction
