@@ -45,18 +45,24 @@ _FUNCTION_OPERATIONS: Dict[str, Dict] = {}
 # spec_file resource.
 
 def _spec_as_json() -> str:
-    """Fetch the configured OpenAPI spec and serialize it to JSON.
-    Uses default=str so YAML timestamp/datetime example values (e.g. the
-    apis.guru spec) don't crash serialization — matching the low-level server."""
-    spec_url = os.environ.get("OPENAPI_SPEC_URL")
-    if not spec_url:
-        return json.dumps({"error": "OPENAPI_SPEC_URL is not configured"})
-    s = fetch_openapi_spec(spec_url)
-    if isinstance(s, str):
-        return s
-    if not s:
+    """Serialize the OpenAPI spec for the spec_file resource.
+
+    Serves the in-memory spec that run_simple_server preloads once; only
+    fetches as a lazy fallback. This avoids a live network re-fetch on every
+    resources/read, respecting the live-first-once spec lifecycle (#28).
+    Uses default=str so YAML datetime example values don't crash serialization.
+    """
+    global spec
+    if spec is None:
+        spec_url = os.environ.get("OPENAPI_SPEC_URL")
+        if not spec_url:
+            return json.dumps({"error": "OPENAPI_SPEC_URL is not configured"})
+        spec = fetch_openapi_spec(spec_url)
+    if not spec:
         return json.dumps({"error": "Failed to fetch OpenAPI spec"})
-    return json.dumps(s, indent=2, default=str)
+    if isinstance(spec, str):
+        return spec
+    return json.dumps(spec, indent=2, default=str)
 
 
 @mcp.resource("file:///openapi_spec.json", name="spec_file",

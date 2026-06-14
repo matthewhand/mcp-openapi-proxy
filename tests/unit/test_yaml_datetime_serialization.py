@@ -57,6 +57,7 @@ def test_fastmcp_spec_resource_serializes_datetime(monkeypatch):
     values. Regression: plain json.dumps (no default=str) crashed reading the
     apis.guru spec with 'Object of type datetime is not JSON serializable'."""
     from mcp_openapi_proxy import server_fastmcp as sf
+    monkeypatch.setattr(sf, "spec", None)  # force the fetch path
     monkeypatch.setenv("OPENAPI_SPEC_URL", "http://example.invalid/s.yaml")
     monkeypatch.setattr(
         sf, "fetch_openapi_spec",
@@ -64,3 +65,17 @@ def test_fastmcp_spec_resource_serializes_datetime(monkeypatch):
     )
     parsed = json.loads(sf._spec_as_json())  # must be valid JSON, no crash
     assert parsed["x"]  # datetime stringified, not dropped
+
+
+def test_fastmcp_resource_uses_preloaded_spec_no_refetch(monkeypatch):
+    """resources/read must serve the preloaded in-memory spec, NOT re-fetch the
+    network on every read — respecting the live-first-once spec lifecycle (#28)."""
+    from mcp_openapi_proxy import server_fastmcp as sf
+    monkeypatch.setattr(sf, "spec", {"openapi": "3.0.0", "info": {"title": "preloaded"}})
+
+    def _boom(url):
+        raise AssertionError("resources/read re-fetched the network instead of using preloaded spec")
+
+    monkeypatch.setattr(sf, "fetch_openapi_spec", _boom)
+    parsed = json.loads(sf._spec_as_json())
+    assert parsed["info"]["title"] == "preloaded"
