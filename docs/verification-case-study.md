@@ -49,35 +49,40 @@ sane tool count.
 
 | Client | Model (live test) | MCP attach mechanism | Tool calls | Prompts/resources to model |
 | --- | --- | --- | --- | --- |
-| Codex | gpt-5-codex | `codex exec -c mcp_servers.*` | ✅ native | unknown ‡ |
-| Gemini | Google OAuth tier | project `.gemini/settings.json` | ✅ native | prompts: interactive slash only · resources: ❌ † |
-| Qwen | gateway model group | project `.qwen/settings.json` | ✅ native | prompts: ✅ (slash) · resources: ❌ † |
-| Kilocode | free auto model | global `mcp_settings.json` | ✅ native | prompts: ❌ · resources: ✅ (`access_mcp_resource`) † |
-| opencode | gateway model group | `opencode.json` `mcp` | ✅ native | unknown ‡ |
-| Vibe | mistral-medium-3.5 | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads | prompts: ❌ · resources: ❌ (tools-only) † |
+| opencode | (CLI default) | `opencode.json` `mcp` | ✅ native | **prompts: ✅ (slash) · resources: ✅ — most complete** ‖ |
+| Codex | gpt-5-codex | `codex exec -c mcp_servers.*` | ✅ native | prompts: ❌ (no prompt meta-tools) · resources: ✅ (`read_mcp_resource`) ‖ |
+| Kilocode | free auto model | global `mcp_settings.json` | ✅ native | prompts: ❌ · resources: ✅ (`access_mcp_resource`) ‖ |
+| Qwen | gateway model group | project `.qwen/settings.json` | ✅ native (live invoke auth-blocked) | prompts: ✅ (slash) · resources: ❌ ‖ |
+| Gemini | Google OAuth tier | project `.gemini/settings.json` | ✅ native | prompts: interactive slash only · resources: interactive `@` only ‖ |
+| Vibe | mistral-medium-3.5 | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads | prompts: ❌ · resources: ❌ (tools-only client) ‖ |
 | agy | — | — | ❌ headless can't enable MCP | n/a |
-| Letta (self-hosted) | gateway model group | stdio via `PUT /v1/tools/mcp/servers` | ✅ native | unknown ‡ |
-| Letta Cloud | Letta default | remote streamable-HTTP MCP URL | ✅ (stdio rejected) | unknown ‡ |
+| Letta (cloud / self-hosted) | Letta Cloud / `PUT /v1/tools/mcp/servers` | streamable-HTTP / stdio | ✅ (prior sweep) | unknown — needs a running Letta server to test ‡ |
 
-*† re-verified 2026-06-14 with advertising on (real binary). ‡ not yet re-tested under advertising-on — prior 0.2.0 prompt/resource results are **voided** (they were measured while the server defaulted to advertising neither). Tool-call results were unaffected and stand.*
+*‖ re-verified 2026-06-14 against the **published 0.3.0** release with no flags set (default-on advertising), driving each real client binary. ‡ Letta not exercised — needs a running server + model, not feasible headless. All pre-0.3.0 prompt/resource results were **voided** (measured while advertising defaulted off). Tool-call results were unaffected and stand.*
 
 **Systemic finding:** every CLI tested could call MCP *tools* natively. Surfacing of
 MCP *prompts/resources* to the model is uneven across clients — but read the correction
 below before concluding it's purely a client gap.
 
-> **† Correction (2026-06-14).** This original sweep ran against a build where the
-> low-level server advertised prompts/resources **only when `ENABLE_PROMPTS`/`ENABLE_RESOURCES`
-> were explicitly set — they defaulted OFF.** Per the MCP spec, a client will not call
-> `prompts/list`/`resources/list` unless the capability is advertised in `initialize`, so
-> a server that doesn't advertise makes prompts/resources invisible to **every** client at
-> once. Part of the original "client-ecosystem gap" was therefore the proxy's own default,
-> not the clients. That default is now **on** (advertising by default; opt out with
-> `ENABLE_PROMPTS=false`/`ENABLE_RESOURCES=false`). Re-running the **real** client binaries
-> with advertising enabled: **tools** universal; **prompts→model** on Qwen (slash commands)
-> and Gemini (interactive only); **resources→model** on Kilocode (`access_mcp_resource`).
-> Vibe remains tools-only (no prompt/resource client support — confirmed in source); Codex,
-> opencode, and Letta were not re-run in this pass. So the residual gap is real and
-> client-side, but **not universal** — and the proxy serves both correctly once it advertises.
+> **Correction & re-verification (2026-06-14, published 0.3.0).** The original sweep ran
+> against a build where the low-level server advertised prompts/resources **only when
+> `ENABLE_PROMPTS`/`ENABLE_RESOURCES` were explicitly set — they defaulted OFF.** Per the
+> MCP spec a client won't call `prompts/list`/`resources/list` unless the capability is
+> advertised in `initialize`, so a server that doesn't advertise makes prompts/resources
+> invisible to **every** client at once. Much of the original "client-ecosystem gap" was
+> therefore the proxy's own default, not the clients. **0.3.0 defaults advertising on**
+> (opt out with `ENABLE_PROMPTS=false`/`ENABLE_RESOURCES=false`).
+>
+> Re-running **every available client binary against the published 0.3.0 with no flags**:
+> - **tools** — universal.
+> - **prompts→model** — **opencode** & **Qwen** (slash commands); **Gemini** interactive-only.
+> - **resources→model** — **opencode**, **Codex** (`read_mcp_resource`), **Kilocode** (`access_mcp_resource`).
+> - **opencode is the only client that surfaces all three.** **Vibe** is tools-only;
+>   **Codex/Kilocode** lack a prompt mechanism; **Qwen/Gemini** lack model-facing resources.
+> - **Letta** could not be tested headless (needs a running server + model) — marked unknown.
+>
+> So the residual gap is real, client-side, and **uneven — not universal**; the proxy
+> advertises and serves all three correctly by default.
 
 ## Prompts & resources
 
