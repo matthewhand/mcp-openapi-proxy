@@ -155,13 +155,25 @@ The example configurations below were exercised against the live APIs, and the p
 |---|---|---|---|---|
 | Codex | `gpt-5-codex` (OpenAI API) | `codex exec -c mcp_servers.*` | ✅ native | ❌ (used raw stdio) |
 | Gemini | Google OAuth free tier (CLI default model) | project `.gemini/settings.json` `mcpServers` | ✅ native | ❌ interactive slash-commands only |
-| Qwen | `agent` group via local LiteLLM gateway | project `.qwen/settings.json` | ✅ native | ❌ NO_PROMPT_ACCESS |
-| Kilocode | `kilo-auto/free` | global `settings/mcp_settings.json`, clean workspace | ✅ native | ❌ |
+| Qwen | `agent` group via local LiteLLM gateway | project `.qwen/settings.json` | ✅ native | ⚠️ prompts ✅ (slash cmds `/summarize_spec`); resources ❌ † |
+| Kilocode | `kilo-auto/free` | global `settings/mcp_settings.json`, clean workspace | ✅ native | ⚠️ resources ✅ (`access_mcp_resource`); prompts ❌ † |
 | opencode | `orchestration` group via local LiteLLM gateway | `~/.config/opencode/opencode.json` `mcp` | ✅ native | ❌ |
 | Vibe | `mistral-medium-3.5` | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads (writes flaky) | ❌ |
 | agy | — | — | ❌ headless cannot enable MCP | — |
 | letta cloud | Letta Cloud default | streamable-HTTP MCP URL (`/mcp add --transport http` + bearer) | ✅ remote (stdio rejected) | — |
 | letta (self-hosted ≤0.11.x) | `agent` group via local LiteLLM gateway | stdio via `PUT /v1/tools/mcp/servers` | ✅ native | — |
+
+> **† Re-verified 2026-06-14 with capability advertising enabled.** The original
+> sweep ran before prompts/resources were advertised **by default** — the server
+> only advertised them when `ENABLE_PROMPTS`/`ENABLE_RESOURCES` were set, so most
+> rows above recorded "client can't see them" when in fact the *server* wasn't
+> advertising. That default is now **on** (this release). Re-testing the real
+> binaries with advertising enabled shows support is genuine but **uneven**:
+> **tools** work everywhere; **prompts** reach the model on Qwen (slash commands)
+> and Gemini (interactive only); **resources** reach the model on Kilocode. The
+> remaining ❌ are real client-side gaps, not a proxy limitation (the proxy
+> advertises and serves both — verified over raw stdio). Codex, opencode, and
+> Letta were not re-run in the 2026-06-14 pass.
 
 Minimal sanitized configs per client (the no-auth Glama spec is used as the smallest working example; substitute your own spec URL and `$YOUR_KEY` as needed):
 

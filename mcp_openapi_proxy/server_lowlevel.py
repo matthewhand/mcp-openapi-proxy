@@ -14,8 +14,8 @@ Configuration is controlled via environment variables:
 - CAPABILITIES_RESOURCES: Set to "true" to enable resources advertising (default: false).
 - CAPABILITIES_PROMPTS: Set to "true" to enable prompts advertising (default: false).
 - ENABLE_TOOLS: Set to "false" to disable tools functionality (default: true).
-- ENABLE_RESOURCES: Set to "true" to enable resources functionality (default: false).
-- ENABLE_PROMPTS: Set to "true" to enable prompts functionality (default: false).
+- ENABLE_RESOURCES: Set to "false" to disable resources functionality (default: true).
+- ENABLE_PROMPTS: Set to "false" to disable prompts functionality (default: true).
 """
 
 import os
@@ -53,10 +53,13 @@ CAPABILITIES_TOOLS = os.getenv("CAPABILITIES_TOOLS", "false").lower() == "true"
 CAPABILITIES_RESOURCES = os.getenv("CAPABILITIES_RESOURCES", "false").lower() == "true"
 CAPABILITIES_PROMPTS = os.getenv("CAPABILITIES_PROMPTS", "false").lower() == "true"
 
-# Check feature enablement envvars (tools on, others off by default)
+# Feature enablement (all on by default). Advertising a capability is
+# required for clients to even attempt prompts/list & resources/list;
+# defaulting these OFF made prompts/resources invisible to every client
+# despite being implemented. Set to "false" to opt out.
 ENABLE_TOOLS = os.getenv("ENABLE_TOOLS", "true").lower() == "true"
-ENABLE_RESOURCES = os.getenv("ENABLE_RESOURCES", "false").lower() == "true"
-ENABLE_PROMPTS = os.getenv("ENABLE_PROMPTS", "false").lower() == "true"
+ENABLE_RESOURCES = os.getenv("ENABLE_RESOURCES", "true").lower() == "true"
+ENABLE_PROMPTS = os.getenv("ENABLE_PROMPTS", "true").lower() == "true"
 
 # Resource and prompt DEFINITIONS are always present so the feature is
 # deterministically testable. Whether they are EXPOSED to clients is gated
