@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1
+
+### Docs
+- **Client matrix re-verified against the published 0.3.0 release** (no flags, default-on
+  advertising), driving every available real client binary. Filled the previously
+  "unknown" cells with evidence:
+  - **opencode** surfaces tools + prompts + resources — the only client that does all three.
+  - **Codex** surfaces tools + resources (`read_mcp_resource`); no prompt mechanism.
+  - **Kilocode** tools + resources; **Qwen** tools + prompts (slash); **Gemini** tools
+    (prompts/resources interactive-only); **Vibe** tools-only.
+  - **Letta** marked unknown — not testable headless (needs a running server + model).
+- No code changes; README is the PyPI long-description, so the corrected matrix ships to devs.
+
 ## 0.3.0
 
 ### Changed
