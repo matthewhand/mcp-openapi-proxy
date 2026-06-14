@@ -50,3 +50,17 @@ def test_spec_cache_store_handles_remaining_nonstring(tmp_path, monkeypatch):
     url = "http://example.invalid/s.json"
     utils._spec_cache_store(url, {"d": datetime.datetime(2020, 1, 1)})  # must not raise
     assert utils._spec_cache_load(url) is not None
+
+
+def test_fastmcp_spec_resource_serializes_datetime(monkeypatch):
+    """FastMCP native spec_file resource must serialize specs containing datetime
+    values. Regression: plain json.dumps (no default=str) crashed reading the
+    apis.guru spec with 'Object of type datetime is not JSON serializable'."""
+    from mcp_openapi_proxy import server_fastmcp as sf
+    monkeypatch.setenv("OPENAPI_SPEC_URL", "http://example.invalid/s.yaml")
+    monkeypatch.setattr(
+        sf, "fetch_openapi_spec",
+        lambda url: {"openapi": "3.0.0", "x": datetime.datetime(2015, 2, 22, 20, 0, 45)},
+    )
+    parsed = json.loads(sf._spec_as_json())  # must be valid JSON, no crash
+    assert parsed["x"]  # datetime stringified, not dropped
