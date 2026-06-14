@@ -49,21 +49,35 @@ sane tool count.
 
 | Client | Model (live test) | MCP attach mechanism | Tool calls | Prompts/resources to model |
 | --- | --- | --- | --- | --- |
-| Codex | gpt-5-codex | `codex exec -c mcp_servers.*` | ✅ native | ❌ (raw stdio only) |
-| Gemini | Google OAuth tier | project `.gemini/settings.json` | ✅ native | ❌ interactive slash-commands only |
-| Qwen | gateway model group | project `.qwen/settings.json` | ✅ native | ❌ no model access |
-| Kilocode | free auto model | global `mcp_settings.json` | ✅ native | ❌ |
-| opencode | gateway model group | `opencode.json` `mcp` | ✅ native | ❌ |
-| Vibe | mistral-medium-3.5 | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads | ❌ |
-| agy | — | — | ❌ headless can't enable MCP | — |
-| Letta (self-hosted) | gateway model group | stdio via `PUT /v1/tools/mcp/servers` | ✅ native | — |
-| Letta Cloud | Letta default | remote streamable-HTTP MCP URL | ✅ (stdio rejected) | — |
+| Codex | gpt-5-codex | `codex exec -c mcp_servers.*` | ✅ native | unknown ‡ |
+| Gemini | Google OAuth tier | project `.gemini/settings.json` | ✅ native | prompts: interactive slash only · resources: ❌ † |
+| Qwen | gateway model group | project `.qwen/settings.json` | ✅ native | prompts: ✅ (slash) · resources: ❌ † |
+| Kilocode | free auto model | global `mcp_settings.json` | ✅ native | prompts: ❌ · resources: ✅ (`access_mcp_resource`) † |
+| opencode | gateway model group | `opencode.json` `mcp` | ✅ native | unknown ‡ |
+| Vibe | mistral-medium-3.5 | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads | prompts: ❌ · resources: ❌ (tools-only) † |
+| agy | — | — | ❌ headless can't enable MCP | n/a |
+| Letta (self-hosted) | gateway model group | stdio via `PUT /v1/tools/mcp/servers` | ✅ native | unknown ‡ |
+| Letta Cloud | Letta default | remote streamable-HTTP MCP URL | ✅ (stdio rejected) | unknown ‡ |
 
-**Systemic finding:** every CLI tested could call MCP *tools* natively, but **none surfaced
-MCP *prompts/resources* to the model** non-interactively (Gemini exposes them as slash
-commands; others not at all). Prompts/resources were therefore verified over raw stdio
-JSON-RPC. This is a client-ecosystem gap, not a proxy limitation — the proxy advertises and
-serves both correctly.
+*† re-verified 2026-06-14 with advertising on (real binary). ‡ not yet re-tested under advertising-on — prior 0.2.0 prompt/resource results are **voided** (they were measured while the server defaulted to advertising neither). Tool-call results were unaffected and stand.*
+
+**Systemic finding:** every CLI tested could call MCP *tools* natively. Surfacing of
+MCP *prompts/resources* to the model is uneven across clients — but read the correction
+below before concluding it's purely a client gap.
+
+> **† Correction (2026-06-14).** This original sweep ran against a build where the
+> low-level server advertised prompts/resources **only when `ENABLE_PROMPTS`/`ENABLE_RESOURCES`
+> were explicitly set — they defaulted OFF.** Per the MCP spec, a client will not call
+> `prompts/list`/`resources/list` unless the capability is advertised in `initialize`, so
+> a server that doesn't advertise makes prompts/resources invisible to **every** client at
+> once. Part of the original "client-ecosystem gap" was therefore the proxy's own default,
+> not the clients. That default is now **on** (advertising by default; opt out with
+> `ENABLE_PROMPTS=false`/`ENABLE_RESOURCES=false`). Re-running the **real** client binaries
+> with advertising enabled: **tools** universal; **prompts→model** on Qwen (slash commands)
+> and Gemini (interactive only); **resources→model** on Kilocode (`access_mcp_resource`).
+> Vibe remains tools-only (no prompt/resource client support — confirmed in source); Codex,
+> opencode, and Letta were not re-run in this pass. So the residual gap is real and
+> client-side, but **not universal** — and the proxy serves both correctly once it advertises.
 
 ## Prompts & resources
 
@@ -80,6 +94,7 @@ The sweep surfaced real defects; each was reproduced, fixed with tests, and rele
 | Issue | Defect | Resolution |
 | --- | --- | --- |
 | #23 | Strict clients saw **zero tools** — empty capabilities + a crash in resource discovery | PR #22 + stdio-handshake test harness |
+| follow-up | Prompts/resources advertised **only when `ENABLE_*` set (default OFF)** → invisible to every client; the sweep mis-attributed this to a client gap | default `ENABLE_PROMPTS`/`ENABLE_RESOURCES` to **on** + regression test asserting default advertisement |
 | #14 | `IGNORE_SSL_TOOLS` ignored by the low-level dispatcher | PR #21 (groundwork by @robbycochran, #15) |
 | #28 | Crash-loop when a slow spec fetch outran a client's connect timeout | PR #40 — handshake-first lazy load, clean stream exit, live-first cache |
 | #24 | `API_AUTH_TYPE` custom schemes (NetBox `Token`) sent **no** auth header | PR #25 — custom scheme prefix |

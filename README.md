@@ -153,15 +153,27 @@ The example configurations below were exercised against the live APIs, and the p
 
 | Agent CLI | Model used (live test) | MCP attach mechanism | Tool calls | Prompts/Resources surfaced to model? |
 |---|---|---|---|---|
-| Codex | `gpt-5-codex` (OpenAI API) | `codex exec -c mcp_servers.*` | ✅ native | ❌ (used raw stdio) |
-| Gemini | Google OAuth free tier (CLI default model) | project `.gemini/settings.json` `mcpServers` | ✅ native | ❌ interactive slash-commands only |
-| Qwen | `agent` group via local LiteLLM gateway | project `.qwen/settings.json` | ✅ native | ❌ NO_PROMPT_ACCESS |
-| Kilocode | `kilo-auto/free` | global `settings/mcp_settings.json`, clean workspace | ✅ native | ❌ |
-| opencode | `orchestration` group via local LiteLLM gateway | `~/.config/opencode/opencode.json` `mcp` | ✅ native | ❌ |
-| Vibe | `mistral-medium-3.5` | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads (writes flaky) | ❌ |
-| agy | — | — | ❌ headless cannot enable MCP | — |
-| letta cloud | Letta Cloud default | streamable-HTTP MCP URL (`/mcp add --transport http` + bearer) | ✅ remote (stdio rejected) | — |
-| letta (self-hosted ≤0.11.x) | `agent` group via local LiteLLM gateway | stdio via `PUT /v1/tools/mcp/servers` | ✅ native | — |
+| Codex | `gpt-5-codex` (OpenAI API) | `codex exec -c mcp_servers.*` | ✅ native | unknown ‡ |
+| Gemini | Google OAuth free tier (CLI default model) | project `.gemini/settings.json` `mcpServers` | ✅ native | prompts: interactive slash only · resources: ❌ † |
+| Qwen | `agent` group via local LiteLLM gateway | project `.qwen/settings.json` | ✅ native | prompts: ✅ (slash `/summarize_spec`) · resources: ❌ † |
+| Kilocode | `kilo-auto/free` | global `settings/mcp_settings.json`, clean workspace | ✅ native | prompts: ❌ · resources: ✅ (`access_mcp_resource`) † |
+| opencode | `orchestration` group via local LiteLLM gateway | `~/.config/opencode/opencode.json` `mcp` | ✅ native | unknown ‡ |
+| Vibe | `mistral-medium-3.5` | `~/.vibe/config.toml` `[[mcp_servers]]` | ✅ discovery + reads (writes flaky) | prompts: ❌ · resources: ❌ (tools-only) † |
+| agy | — | — | ❌ headless cannot enable MCP | n/a |
+| letta cloud | Letta Cloud default | streamable-HTTP MCP URL (`/mcp add --transport http` + bearer) | ✅ remote (stdio rejected) | unknown ‡ |
+| letta (self-hosted ≤0.11.x) | `agent` group via local LiteLLM gateway | stdio via `PUT /v1/tools/mcp/servers` | ✅ native | unknown ‡ |
+
+> **Prompts/resources column — read this.** The original 0.2.0 sweep ran while the
+> server advertised prompts/resources **only when `ENABLE_PROMPTS`/`ENABLE_RESOURCES`
+> were set — they defaulted OFF.** Per the MCP spec a client won't call
+> `prompts/list`/`resources/list` unless the capability is advertised, so those early
+> results measured the *server's* default, not the clients. **All prior prompt/resource
+> findings are therefore voided.** This release defaults advertising **on**.
+>
+> - **† re-verified 2026-06-14** with advertising on, against the real client binary. Genuine, uneven: **tools** everywhere; **prompts→model** Qwen (slash) & Gemini (interactive only); **resources→model** Kilocode. Vibe is tools-only (confirmed in source).
+> - **‡ unknown** — not yet re-tested under advertising-on (opencode not installed here; Letta needs a running server + gateway; Codex parked). Prior ❌ values are not carried forward.
+>
+> Tool-calling (the `Tool calls` column) was unaffected by the advertising default and stands as originally verified.
 
 Minimal sanitized configs per client (the no-auth Glama spec is used as the smallest working example; substitute your own spec URL and `$YOUR_KEY` as needed):
 

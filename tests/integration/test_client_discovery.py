@@ -190,3 +190,41 @@ def test_simple_mode_tools_discoverable(simple_server):
     assert "result" in tools, f"tools/list errored: {tools}"
     names = [t["name"] for t in tools["result"]["tools"]]
     assert "list_functions" in names and "call_function" in names, names
+
+
+@pytest.fixture
+def server_default_caps(tmp_path):
+    """Server with NO ENABLE_*/CAPABILITIES_* set — exercises the shipped
+    DEFAULTS. Regression guard: prompts/resources used to default OFF, so the
+    server advertised tools only and every client was blind to them."""
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(SPEC))
+    env = dict(os.environ)
+    for k in ("ENABLE_RESOURCES", "ENABLE_PROMPTS", "ENABLE_TOOLS",
+              "CAPABILITIES_RESOURCES", "CAPABILITIES_PROMPTS", "CAPABILITIES_TOOLS"):
+        env.pop(k, None)
+    env.update({"OPENAPI_SPEC_URL": spec_path.as_uri(), "DEBUG": "false"})
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "from mcp_openapi_proxy import main; main()"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        env=env, text=True,
+    )
+    try:
+        yield proc
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+
+
+def test_defaults_advertise_prompts_and_resources(server_default_caps):
+    """By DEFAULT (no env flags) the low-level server must advertise prompts and
+    resources, not just tools — otherwise spec-compliant clients never call
+    prompts/list or resources/list and the features are invisible."""
+    client = StdioClient(server_default_caps)
+    caps = _initialize(client).get("capabilities", {})
+    assert caps.get("tools") is not None, f"tools missing by default: {caps}"
+    assert caps.get("prompts") is not None, f"prompts not advertised by default: {caps}"
+    assert caps.get("resources") is not None, f"resources not advertised by default: {caps}"
