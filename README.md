@@ -148,7 +148,7 @@ The example configurations below were exercised against the live APIs, and the p
 | flyio | 34–35 | apps + machine health | `API_KEY` |
 | slack | 7 (exact dot-path whitelist until #27 fix) | `auth.test` + `postMessage` | `API_KEY` |
 | netbox | 9 (whitelist `/ipam/ip-addresses`) | IPAM write + read | `API_KEY` + `API_AUTH_TYPE=Token` |
-| homeassistant | 6 | `get_config` (200) + `call_service` (light.turn_on, 200) | `SERVER_URL_OVERRIDE` + `API_KEY` (`${HA_TOKEN}`, sent as Bearer) |
+| homeassistant | 21 | `get_config` (200) + `call_service` (light.turn_on, 200) | `SERVER_URL_OVERRIDE` + `API_KEY` (`${HA_TOKEN}`, sent as Bearer) |
 
 ### Client matrix
 
@@ -923,8 +923,13 @@ Tips: set `IGNORE_SSL_TOOLS=true` only if your host serves a self-signed/mismatc
 <details>
 <summary><b>Home Assistant Example</b> — control your smart home; <code>call_service</code> needs the >= 0.3.3 path-param body fix</summary>
 
-Exposes a small generic slice of the Home Assistant REST API: `get_config`, `list_states`,
-`get_state`, `list_services`, `call_service`, `get_history`.
+Exposes a generic slice of the [Home Assistant REST API](https://developers.home-assistant.io/docs/api/rest/)
+(21 operations) — read state (`get_config`, `list_states`, `get_state`, `list_services`,
+`get_history`/`get_history_now`, `get_logbook`, `list_calendars`, `get_calendar_events`,
+`get_camera_image`, `get_error_log`, `list_components`, `list_events`, `get_api_status`) and
+act (`call_service`, `set_state`, `delete_state`, `fire_event`, `render_template`,
+`check_config`, `handle_intent`). HA ships no official OpenAPI spec, so this is hand-rolled
+from the official docs.
 
 #### 1. Verify the OpenAPI specification
 

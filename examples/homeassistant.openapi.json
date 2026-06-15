@@ -1,18 +1,46 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "Home Assistant REST API (example subset)",
-    "version": "1.0.0",
-    "description": "Minimal, generic Home Assistant REST API spec for mcp-openapi-proxy. Point SERVER_URL_OVERRIDE at your instance (http://<ha-host>:8123) and authenticate with a long-lived access token via API_KEY=${HA_TOKEN} (the proxy sends it as 'Authorization: Bearer <token>' by default). call_service requires the path-parameter body-strip fix (>= 0.3.3)."
+    "title": "Home Assistant REST API (example)",
+    "version": "1.1.0",
+    "description": "Generic Home Assistant REST API spec for mcp-openapi-proxy, modelled on the official docs at https://developers.home-assistant.io/docs/api/rest/ (HA ships no official OpenAPI spec). Point SERVER_URL_OVERRIDE at your instance (http://<ha-host>:8123) and authenticate with a long-lived access token via API_KEY=${HA_TOKEN} (the proxy sends it as 'Authorization: Bearer <token>' by default). POST operations with path parameters (call_service, set_state, fire_event) require the path-parameter body-strip fix (>= 0.3.3)."
   },
   "servers": [
     { "url": "http://homeassistant.local:8123" }
   ],
   "paths": {
+    "/api/": {
+      "get": {
+        "operationId": "get_api_status",
+        "summary": "Check the API is up and running",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
     "/api/config": {
       "get": {
         "operationId": "get_config",
         "summary": "Get the Home Assistant configuration",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/components": {
+      "get": {
+        "operationId": "list_components",
+        "summary": "List the loaded components",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/events": {
+      "get": {
+        "operationId": "list_events",
+        "summary": "List the available events and listener counts",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/error_log": {
+      "get": {
+        "operationId": "get_error_log",
+        "summary": "Retrieve all errors logged during the current session",
         "responses": { "200": { "description": "OK" } }
       }
     },
@@ -29,6 +57,41 @@
         "summary": "Get the state of one entity",
         "parameters": [
           { "name": "entity_id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Entity id, e.g. light.kitchen" }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      },
+      "post": {
+        "operationId": "set_state",
+        "summary": "Create or update the state of an entity (does not talk to the device)",
+        "parameters": [
+          { "name": "entity_id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Entity id, e.g. sensor.kitchen_temperature" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["state"],
+                "properties": {
+                  "state": { "type": "string", "description": "New state value" },
+                  "attributes": { "type": "object", "description": "Optional state attributes", "additionalProperties": true }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated existing state" },
+          "201": { "description": "Created new state" }
+        }
+      },
+      "delete": {
+        "operationId": "delete_state",
+        "summary": "Delete an entity's state",
+        "parameters": [
+          { "name": "entity_id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Entity id to remove" }
         ],
         "responses": { "200": { "description": "OK" } }
       }
@@ -73,13 +136,145 @@
         "responses": { "200": { "description": "OK" } }
       }
     },
+    "/api/events/{event_type}": {
+      "post": {
+        "operationId": "fire_event",
+        "summary": "Fire an event with optional event data",
+        "parameters": [
+          { "name": "event_type", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Event type, e.g. my_custom_event" }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Arbitrary event data.",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/history/period": {
+      "get": {
+        "operationId": "get_history_now",
+        "summary": "Get state history (defaults to the last day)",
+        "parameters": [
+          { "name": "filter_entity_id", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Comma-separated entity ids to include, e.g. sensor.temp,light.kitchen" },
+          { "name": "end_time", "in": "query", "required": false, "schema": { "type": "string" }, "description": "URL-encoded ISO 8601 end of the period" },
+          { "name": "minimal_response", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Return only last_changed and state" },
+          { "name": "no_attributes", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Skip returning attributes" },
+          { "name": "significant_changes_only", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Only return significant state changes" }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
     "/api/history/period/{timestamp}": {
       "get": {
         "operationId": "get_history",
         "summary": "Get state history starting at a timestamp",
         "parameters": [
-          { "name": "timestamp", "in": "path", "required": true, "schema": { "type": "string" }, "description": "ISO 8601 start time, e.g. 2024-01-01T00:00:00+00:00" }
+          { "name": "timestamp", "in": "path", "required": true, "schema": { "type": "string" }, "description": "ISO 8601 start time, e.g. 2024-01-01T00:00:00+00:00" },
+          { "name": "filter_entity_id", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Comma-separated entity ids to include, e.g. sensor.temp,light.kitchen" },
+          { "name": "end_time", "in": "query", "required": false, "schema": { "type": "string" }, "description": "URL-encoded ISO 8601 end of the period" },
+          { "name": "minimal_response", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Return only last_changed and state" },
+          { "name": "no_attributes", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Skip returning attributes" },
+          { "name": "significant_changes_only", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Only return significant state changes" }
         ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/logbook/{timestamp}": {
+      "get": {
+        "operationId": "get_logbook",
+        "summary": "Get logbook entries starting at a timestamp",
+        "parameters": [
+          { "name": "timestamp", "in": "path", "required": true, "schema": { "type": "string" }, "description": "ISO 8601 start time" },
+          { "name": "entity", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Filter on a single entity id" },
+          { "name": "end_time", "in": "query", "required": false, "schema": { "type": "string" }, "description": "URL-encoded ISO 8601 end of the period" }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/calendars": {
+      "get": {
+        "operationId": "list_calendars",
+        "summary": "List the calendar entities",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/calendars/{calendar_entity_id}": {
+      "get": {
+        "operationId": "get_calendar_events",
+        "summary": "Get calendar events between two times",
+        "parameters": [
+          { "name": "calendar_entity_id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Calendar entity id, e.g. calendar.home" },
+          { "name": "start", "in": "query", "required": true, "schema": { "type": "string" }, "description": "URL-encoded ISO 8601 start time" },
+          { "name": "end", "in": "query", "required": true, "schema": { "type": "string" }, "description": "URL-encoded ISO 8601 end time" }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/camera_proxy/{camera_entity_id}": {
+      "get": {
+        "operationId": "get_camera_image",
+        "summary": "Get the current image from a camera entity",
+        "parameters": [
+          { "name": "camera_entity_id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Camera entity id, e.g. camera.front_door" }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/template": {
+      "post": {
+        "operationId": "render_template",
+        "summary": "Render a Home Assistant Jinja2 template",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["template"],
+                "properties": {
+                  "template": { "type": "string", "description": "Template string, e.g. {{ states('sensor.temperature') }}" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Rendered template (text/plain)" } }
+      }
+    },
+    "/api/config/core/check_config": {
+      "post": {
+        "operationId": "check_config",
+        "summary": "Trigger a check of configuration.yaml",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/intent/handle": {
+      "post": {
+        "operationId": "handle_intent",
+        "summary": "Handle an intent",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "description": "Intent name, e.g. SetTimer" },
+                  "data": { "type": "object", "description": "Intent slot data", "additionalProperties": true }
+                }
+              }
+            }
+          }
+        },
         "responses": { "200": { "description": "OK" } }
       }
     }
