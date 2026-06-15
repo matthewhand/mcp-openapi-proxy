@@ -3,7 +3,7 @@
   "info": {
     "title": "Home Assistant REST API (example subset)",
     "version": "1.0.0",
-    "description": "Minimal, generic Home Assistant REST API spec for mcp-openapi-proxy. Point SERVER_URL_OVERRIDE at your instance (http://<ha-host>:8123) and authenticate with a long-lived access token via EXTRA_HEADERS=\"Authorization: Bearer ${HA_TOKEN}\". call_service requires the path-parameter body-strip fix (>= 0.3.3)."
+    "description": "Minimal, generic Home Assistant REST API spec for mcp-openapi-proxy. Point SERVER_URL_OVERRIDE at your instance (http://<ha-host>:8123) and authenticate with a long-lived access token via API_KEY=${HA_TOKEN} (the proxy sends it as 'Authorization: Bearer <token>' by default). call_service requires the path-parameter body-strip fix (>= 0.3.3)."
   },
   "servers": [
     { "url": "http://homeassistant.local:8123" }

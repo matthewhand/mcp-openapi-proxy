@@ -148,7 +148,7 @@ The example configurations below were exercised against the live APIs, and the p
 | flyio | 34–35 | apps + machine health | `API_KEY` |
 | slack | 7 (exact dot-path whitelist until #27 fix) | `auth.test` + `postMessage` | `API_KEY` |
 | netbox | 9 (whitelist `/ipam/ip-addresses`) | IPAM write + read | `API_KEY` + `API_AUTH_TYPE=Token` |
-| homeassistant | 6 | `get_config` (200) + `call_service` (light.turn_on, 200) | `SERVER_URL_OVERRIDE` + `EXTRA_HEADERS` (`Authorization: Bearer ${HA_TOKEN}`) |
+| homeassistant | 6 | `get_config` (200) + `call_service` (light.turn_on, 200) | `SERVER_URL_OVERRIDE` + `API_KEY` (`${HA_TOKEN}`, sent as Bearer) |
 
 ### Client matrix
 
@@ -943,7 +943,7 @@ curl https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/refs/heads/
             "env": {
                 "OPENAPI_SPEC_URL": "https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/refs/heads/main/examples/homeassistant.openapi.json",
                 "SERVER_URL_OVERRIDE": "http://homeassistant.local:8123",
-                "EXTRA_HEADERS": "Authorization: Bearer ${HA_TOKEN}"
+                "API_KEY": "${HA_TOKEN}"
             }
         }
     }
@@ -952,7 +952,7 @@ curl https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/refs/heads/
 
 Key configuration points:
 - `SERVER_URL_OVERRIDE` — your instance base URL, e.g. `http://homeassistant.local:8123` or `http://<ha-host>:8123`.
-- `HA_TOKEN` — a Home Assistant **long-lived access token** (Profile → Long-Lived Access Tokens), passed via `EXTRA_HEADERS`. Never commit the token; keep it in your environment.
+- `HA_TOKEN` — a Home Assistant **long-lived access token** (Profile → Long-Lived Access Tokens), passed via `API_KEY`; the proxy sends it as `Authorization: Bearer <token>` (its default scheme), so no `EXTRA_HEADERS` needed. Never commit the token; keep it in your environment.
 - `call_service` requires **mcp-openapi-proxy >= 0.3.3**: earlier versions leaked the `{domain}`/`{service}` path params into the JSON body, which Home Assistant rejects with HTTP 400.
 
 #### 3. Testing
