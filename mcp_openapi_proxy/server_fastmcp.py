@@ -36,6 +36,55 @@ spec = None  # Global spec for resources
 # callable via call_function.
 _FUNCTION_OPERATIONS: Dict[str, Dict] = {}
 
+
+# --- Native MCP prompts & resources for FastMCP/simple mode ---
+# Previously simple mode advertised the prompts/resources capabilities (FastMCP
+# does so automatically) but registered none, so prompts/list & resources/list
+# came back EMPTY. Register them natively here for parity with the low-level
+# server (same names/content): prompts summarize_spec + whimsical_blog, and the
+# spec_file resource.
+
+def _spec_as_json() -> str:
+    """Serialize the OpenAPI spec for the spec_file resource.
+
+    Serves the in-memory spec that run_simple_server preloads once; only
+    fetches as a lazy fallback. This avoids a live network re-fetch on every
+    resources/read, respecting the live-first-once spec lifecycle (#28).
+    Uses default=str so YAML datetime example values don't crash serialization.
+    """
+    global spec
+    if spec is None:
+        spec_url = os.environ.get("OPENAPI_SPEC_URL")
+        if not spec_url:
+            return json.dumps({"error": "OPENAPI_SPEC_URL is not configured"})
+        spec = fetch_openapi_spec(spec_url)
+    if not spec:
+        return json.dumps({"error": "Failed to fetch OpenAPI spec"})
+    if isinstance(spec, str):
+        return spec
+    return json.dumps(spec, indent=2, default=str)
+
+
+@mcp.resource("file:///openapi_spec.json", name="spec_file",
+              description="The raw OpenAPI specification JSON", mime_type="application/json")
+def _spec_file_resource() -> str:
+    """Serve the configured OpenAPI spec as a native MCP resource."""
+    return _spec_as_json()
+
+
+@mcp.prompt(name="summarize_spec", description="Summarizes the OpenAPI specification")
+def _summarize_spec_prompt() -> str:
+    return ("This OpenAPI spec defines endpoints, parameters, and responses—a "
+            "blueprint for developers to integrate effectively.")
+
+
+@mcp.prompt(name="whimsical_blog", description="A whimsical WordPress blog-post starter inspired by this API")
+def _whimsical_blog_prompt() -> str:
+    return ("Once upon a JSON, in a land of tilde keys and sticky semicolons, a pet AI "
+            "chatbot discovered it could whisper to WordPress through a magic OpenAPI proxy. "
+            "✨ Write the next whimsical chapter.")
+
+
 @mcp.tool()
 def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
     """Lists available functions derived from the OpenAPI specification."""
@@ -243,7 +292,8 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
             spec_local = json.loads(spec_local)
         if spec_local is None:
             return json.dumps({"error": "Failed to fetch OpenAPI spec"})
-        return json.dumps(spec_local, indent=2)
+        # default=str: YAML datetime example values aren't JSON-serializable
+        return json.dumps(spec_local, indent=2, default=str)
     if function_name == "list_prompts":
         return json.dumps([{"name": "summarize_spec", "description": "Summarizes the purpose of the OpenAPI specification", "arguments": []}])
     if function_name == "get_prompt":

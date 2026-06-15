@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.2
+
+### Fixed
+- **FastMCP / simple mode** (`OPENAPI_SIMPLE_MODE=true`) advertised the prompts and
+  resources capabilities but served **empty lists**. It now serves native MCP prompts
+  (`summarize_spec`, `whimsical_blog`) and the `spec_file` resource — at parity with the
+  low-level server. (Tools, prompts, resources all work in both modes now.)
+- FastMCP spec-serialization paths now use `default=str`, so specs with YAML datetime
+  example values (e.g. the apis.guru directory spec) no longer crash `resources/read`
+  with "Object of type datetime is not JSON serializable".
+
+### Tests
+- TDD: added simple-mode prompts/resources **serve** tests (not just advertise) and a
+  datetime-serialization regression test. Verified with a full permutation sweep —
+  both modes × {tools, prompts, resources} × {list, invoke} — all green.
+
 ## 0.3.1
 
 ### Docs

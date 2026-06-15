@@ -228,3 +228,35 @@ def test_defaults_advertise_prompts_and_resources(server_default_caps):
     assert caps.get("tools") is not None, f"tools missing by default: {caps}"
     assert caps.get("prompts") is not None, f"prompts not advertised by default: {caps}"
     assert caps.get("resources") is not None, f"resources not advertised by default: {caps}"
+
+
+# --- FastMCP / simple-mode parity: prompts + resources must be SERVED, not
+# just advertised. Regression: simple mode advertised prompts/resources
+# capabilities but returned empty lists (advertise-but-empty). ---
+
+def test_simple_mode_serves_prompts(simple_server):
+    """FastMCP (simple) mode must serve native MCP prompts, not just advertise
+    the capability with an empty list."""
+    client = StdioClient(simple_server)
+    caps = _initialize(client).get("capabilities", {})
+    assert caps.get("prompts") is not None, f"prompts capability missing: {caps}"
+    pl = client.request("prompts/list")
+    names = [p["name"] for p in pl.get("result", {}).get("prompts", [])]
+    assert "summarize_spec" in names, f"summarize_spec not served in simple mode: {names}"
+    got = client.request("prompts/get", {"name": "summarize_spec", "arguments": {}})
+    msgs = got.get("result", {}).get("messages", [])
+    assert msgs and msgs[0]["content"]["type"] == "text", f"prompts/get returned no messages: {got}"
+
+
+def test_simple_mode_serves_resources(simple_server):
+    """FastMCP (simple) mode must serve native MCP resources, not just advertise
+    the capability with an empty list."""
+    client = StdioClient(simple_server)
+    caps = _initialize(client).get("capabilities", {})
+    assert caps.get("resources") is not None, f"resources capability missing: {caps}"
+    rl = client.request("resources/list")
+    uris = [str(r["uri"]) for r in rl.get("result", {}).get("resources", [])]
+    assert any("openapi_spec.json" in u for u in uris), f"spec_file not served in simple mode: {uris}"
+    rd = client.request("resources/read", {"uri": "file:///openapi_spec.json"})
+    contents = rd.get("result", {}).get("contents", [])
+    assert contents and contents[0].get("text"), f"resources/read returned no content: {rd}"
