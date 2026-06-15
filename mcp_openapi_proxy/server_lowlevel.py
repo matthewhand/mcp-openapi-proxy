@@ -249,14 +249,19 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
         try:
             path = path.format(**parameters)
             logger.debug(f"Substituted path using format(): {path}")
-            if method == "GET":
-                placeholder_keys = [
-                    seg.strip("{}")
-                    for seg in operation_details["original_path"].split("/")
-                    if seg.startswith("{") and seg.endswith("}")
-                ]
-                for key in placeholder_keys:
-                    parameters.pop(key, None)
+            # Path placeholders are now substituted into the URL, so drop them from
+            # `parameters` for ALL methods. Previously this ran only for GET, so on
+            # POST/PUT/PATCH/DELETE the path params leaked into request_body and
+            # strict APIs rejected the unexpected fields -- e.g. Home Assistant
+            # POST /api/services/{domain}/{service} returned HTTP 400 because the
+            # body carried domain/service.
+            placeholder_keys = [
+                seg.strip("{}")
+                for seg in operation_details["original_path"].split("/")
+                if seg.startswith("{") and seg.endswith("}")
+            ]
+            for key in placeholder_keys:
+                parameters.pop(key, None)
         except KeyError as e:
             logger.error(f"Missing parameter for substitution: {e}")
             return types.CallToolResult(

@@ -148,6 +148,7 @@ The example configurations below were exercised against the live APIs, and the p
 | flyio | 34–35 | apps + machine health | `API_KEY` |
 | slack | 7 (exact dot-path whitelist until #27 fix) | `auth.test` + `postMessage` | `API_KEY` |
 | netbox | 9 (whitelist `/ipam/ip-addresses`) | IPAM write + read | `API_KEY` + `API_AUTH_TYPE=Token` |
+| homeassistant | 6 | `get_config` (200) + `call_service` (light.turn_on, 200) | `SERVER_URL_OVERRIDE` + `EXTRA_HEADERS` (`Authorization: Bearer ${HA_TOKEN}`) |
 
 ### Client matrix
 
@@ -910,6 +911,49 @@ printf 'myuser:xxxx xxxx xxxx xxxx xxxx xxxx' | base64 -w0
 ```
 
 Tips: set `IGNORE_SSL_TOOLS=true` only if your host serves a self-signed/mismatched cert; give each agent its own (revocable) application password; keep `TOOL_WHITELIST=/wp/v2/posts` so the agent can touch only posts.
+
+</details>
+
+<details>
+<summary><b>Home Assistant Example</b> — control your smart home; <code>call_service</code> needs the >= 0.3.3 path-param body fix</summary>
+
+Exposes a small generic slice of the Home Assistant REST API: `get_config`, `list_states`,
+`get_state`, `list_services`, `call_service`, `get_history`.
+
+#### 1. Verify the OpenAPI specification
+
+```bash
+curl https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/refs/heads/main/examples/homeassistant.openapi.json
+```
+
+#### 2. Configure mcp-openapi-proxy for Home Assistant
+
+```json
+{
+    "mcpServers": {
+        "homeassistant": {
+            "command": "uvx",
+            "args": ["mcp-openapi-proxy"],
+            "env": {
+                "OPENAPI_SPEC_URL": "https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/refs/heads/main/examples/homeassistant.openapi.json",
+                "SERVER_URL_OVERRIDE": "http://homeassistant.local:8123",
+                "EXTRA_HEADERS": "Authorization: Bearer ${HA_TOKEN}"
+            }
+        }
+    }
+}
+```
+
+Key configuration points:
+- `SERVER_URL_OVERRIDE` — your instance base URL, e.g. `http://homeassistant.local:8123` or `http://<ha-host>:8123`.
+- `HA_TOKEN` — a Home Assistant **long-lived access token** (Profile → Long-Lived Access Tokens), passed via `EXTRA_HEADERS`. Never commit the token; keep it in your environment.
+- `call_service` requires **mcp-openapi-proxy >= 0.3.3**: earlier versions leaked the `{domain}`/`{service}` path params into the JSON body, which Home Assistant rejects with HTTP 400.
+
+#### 3. Testing
+
+`get_config` should return your HA configuration (200). `call_service` for `light/turn_on`
+with body `{"entity_id": "light.kitchen"}` should return 200 — the path params land in the URL
+(`/api/services/light/turn_on`), not the body.
 
 </details>
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.3
+
+### Fixed
+- Strip path parameters from **non-GET** request bodies (was GET-only). Substituted
+  `{path}` placeholders were left in `parameters` for POST/PUT/PATCH/DELETE and leaked
+  into the JSON body, so strict APIs returned 400 — e.g. Home Assistant
+  `POST /api/services/{domain}/{service}` rejected the body carrying `domain`/`service`.
+  Now stripped for all methods. Regression test added.
+
+### Added
+- Home Assistant example (`examples/homeassistant.openapi.json` +
+  `examples/homeassistant-claude_desktop_config.json`): generic REST slice
+  (get_config, list_states, get_state, list_services, call_service, get_history) with
+  named `call_service` body args. Auth via `EXTRA_HEADERS="Authorization: Bearer ${HA_TOKEN}"`
+  and `SERVER_URL_OVERRIDE`. Requires this release's fix for `call_service`.
+
 ## 0.3.2
 
 ### Fixed
