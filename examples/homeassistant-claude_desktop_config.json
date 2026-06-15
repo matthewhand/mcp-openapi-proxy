@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "homeassistant": {
+      "command": "uvx",
+      "args": [
+        "mcp-openapi-proxy"
+      ],
+      "env": {
+        "OPENAPI_SPEC_URL": "https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/refs/heads/main/examples/homeassistant.openapi.json",
+        "SERVER_URL_OVERRIDE": "http://homeassistant.local:8123",
+        "EXTRA_HEADERS": "Authorization: Bearer ${HA_TOKEN}"
+      }
+    }
+  }
+}

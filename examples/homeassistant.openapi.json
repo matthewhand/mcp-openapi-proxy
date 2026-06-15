@@ -1,0 +1,87 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Home Assistant REST API (example subset)",
+    "version": "1.0.0",
+    "description": "Minimal, generic Home Assistant REST API spec for mcp-openapi-proxy. Point SERVER_URL_OVERRIDE at your instance (http://<ha-host>:8123) and authenticate with a long-lived access token via EXTRA_HEADERS=\"Authorization: Bearer ${HA_TOKEN}\". call_service requires the path-parameter body-strip fix (>= 0.3.3)."
+  },
+  "servers": [
+    { "url": "http://homeassistant.local:8123" }
+  ],
+  "paths": {
+    "/api/config": {
+      "get": {
+        "operationId": "get_config",
+        "summary": "Get the Home Assistant configuration",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/states": {
+      "get": {
+        "operationId": "list_states",
+        "summary": "List the state of every entity",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/states/{entity_id}": {
+      "get": {
+        "operationId": "get_state",
+        "summary": "Get the state of one entity",
+        "parameters": [
+          { "name": "entity_id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Entity id, e.g. light.kitchen" }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/services": {
+      "get": {
+        "operationId": "list_services",
+        "summary": "List the available services per domain",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/services/{domain}/{service}": {
+      "post": {
+        "operationId": "call_service",
+        "summary": "Call a service, e.g. light.turn_on or notify.notify",
+        "parameters": [
+          { "name": "domain", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Service domain, e.g. light" },
+          { "name": "service", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Service name, e.g. turn_on" }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Service data. Common fields are named so they surface as tool arguments; arbitrary extra fields are allowed.",
+                "properties": {
+                  "entity_id": { "type": "string", "description": "Target entity or list, e.g. light.kitchen" },
+                  "message": { "type": "string", "description": "Message body for notify.* services" },
+                  "title": { "type": "string", "description": "Title for notify.* services" },
+                  "brightness_pct": { "type": "integer", "description": "Light brightness 0-100" },
+                  "color_name": { "type": "string", "description": "CSS color name for lights" },
+                  "temperature": { "type": "number", "description": "Target temperature (climate)" },
+                  "hvac_mode": { "type": "string", "description": "Climate mode, e.g. heat, cool, off" },
+                  "code": { "type": "string", "description": "Code for lock/alarm services" }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/history/period/{timestamp}": {
+      "get": {
+        "operationId": "get_history",
+        "summary": "Get state history starting at a timestamp",
+        "parameters": [
+          { "name": "timestamp", "in": "path", "required": true, "schema": { "type": "string" }, "description": "ISO 8601 start time, e.g. 2024-01-01T00:00:00+00:00" }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    }
+  }
+}
