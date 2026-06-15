@@ -50,7 +50,7 @@ sane tool count.
 | Client | Model (live test) | MCP attach mechanism | Tool calls | Prompts/resources to model |
 | --- | --- | --- | --- | --- |
 | opencode | (CLI default) | `opencode.json` `mcp` | ✅ native | **prompts: ✅ (slash) · resources: ✅ — most complete** ‖ |
-| Codex | gpt-5-codex | `codex exec -c mcp_servers.*` | ✅ native | prompts: ❌ (no prompt meta-tools) · resources: ✅ (`read_mcp_resource`) ‖ |
+| Codex | gpt-5-codex | `codex exec -c mcp_servers.*` | ✅ native | prompts: ❌ low-level · ✅ fastmcp (via `call_function`→`get_prompt`) · resources: ✅ (`read_mcp_resource`) ‖ |
 | Kilocode | free auto model | global `mcp_settings.json` | ✅ native | prompts: ❌ · resources: ✅ (`access_mcp_resource`) ‖ |
 | Qwen | gateway model group | project `.qwen/settings.json` | ✅ native (live invoke auth-blocked) | prompts: ✅ (slash) · resources: ❌ ‖ |
 | Gemini | Google OAuth tier | project `.gemini/settings.json` | ✅ native | prompts: interactive slash only · resources: interactive `@` only ‖ |
@@ -58,7 +58,12 @@ sane tool count.
 | agy | — | — | ❌ headless can't enable MCP | n/a |
 | Letta (cloud / self-hosted) | Letta Cloud / `PUT /v1/tools/mcp/servers` | streamable-HTTP / stdio | ✅ (prior sweep) | unknown — needs a running Letta server to test ‡ |
 
-*‖ re-verified 2026-06-14 against the **published 0.3.0** release with no flags set (default-on advertising), driving each real client binary. ‡ Letta not exercised — needs a running server + model, not feasible headless. All pre-0.3.0 prompt/resource results were **voided** (measured while advertising defaulted off). Tool-call results were unaffected and stand.*
+*‖ re-verified 2026-06-15 against the **published 0.3.3** release with no flags set (default-on advertising), driving each real client binary in **both** server modes (low-level and FastMCP simple); per-client results matched across modes except Codex prompts (see below). ‡ Letta not exercised — needs a running server + model, not feasible headless. All pre-0.3.0 prompt/resource results were **voided** (measured while advertising defaulted off). Tool-call results were unaffected and stand.*
+
+> **FastMCP-mode prompt access:** in FastMCP simple mode the static `call_function`
+> exposes `get_prompt`/`list_prompts`, so a client with no native prompt surface can still
+> reach prompts that way. Codex shows this: prompts ❌ in low-level mode, ✅ in FastMCP
+> simple mode. Resources behaved the same in both modes for every client.
 
 **Systemic finding:** every CLI tested could call MCP *tools* natively. Surfacing of
 MCP *prompts/resources* to the model is uneven across clients — but read the correction

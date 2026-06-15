@@ -155,7 +155,7 @@ The example configurations below were exercised against the live APIs, and the p
 | Agent CLI | Model used (live test) | MCP attach mechanism | Tool calls | Prompts/Resources surfaced to model? |
 |---|---|---|---|---|
 | **opencode** | (CLI default) | `~/.config/opencode/opencode.json` `mcp` | ✅ native | **prompts: ✅ (slash) · resources: ✅** — most complete ‖ |
-| Codex | `gpt-5-codex` (OpenAI API) | `codex exec -c mcp_servers.*` | ✅ native | prompts: ❌ (no prompt meta-tools) · resources: ✅ (`read_mcp_resource`) ‖ |
+| Codex | `gpt-5-codex` (OpenAI API) | `codex exec -c mcp_servers.*` | ✅ native | prompts: ❌ low-level · ✅ fastmcp (via `call_function`→`get_prompt`) · resources: ✅ (`read_mcp_resource`) ‖ |
 | Kilocode | `kilo-auto/free` | global `settings/mcp_settings.json` | ✅ native | prompts: ❌ (no prompt mechanism) · resources: ✅ (`access_mcp_resource`) ‖ |
 | Qwen | `agent` group via local LiteLLM gateway | project `.qwen/settings.json` | ✅ native (live invoke auth-blocked) | prompts: ✅ (slash `/summarize_spec`) · resources: ❌ (no client support) ‖ |
 | Gemini | Google OAuth free tier (CLI default model) | project `.gemini/settings.json` `mcpServers` | ✅ native | prompts: interactive slash only · resources: interactive `@` only (neither reaches the model headless) ‖ |
@@ -167,11 +167,17 @@ The example configurations below were exercised against the live APIs, and the p
 > resources. **mcp-openapi-proxy serves all three, advertised by default since 0.3.0.**
 > Whether they reach the model is up to the *client*, and that varies:
 >
-> - **‖ re-verified 2026-06-14 against the published 0.3.0 release** with **no** flags set
->   (validating the default-on advertising), driving each **real client binary**.
+> - **‖ re-verified 2026-06-15 against the published 0.3.3 release** with **no** flags set
+>   (validating the default-on advertising), driving each **real client binary**, in
+>   **both** server modes (low-level and FastMCP simple). Per-client results were the
+>   same across modes except where noted.
 > - **Tools** work on every client tested. **Prompts→model**: opencode & Qwen (slash
 >   commands); Gemini interactive-only. **Resources→model**: opencode, Codex, Kilocode.
->   **opencode is the only client that surfaces all three.** Vibe is tools-only.
+>   **opencode is the only client that surfaces all three** in any mode.
+> - **FastMCP simple mode exception:** a client with no native prompt surface can still
+>   reach prompts through the static `call_function`→`get_prompt` indirection. Observed
+>   with **Codex** (prompts ❌ in low-level, ✅ in FastMCP simple mode). Vibe stays
+>   tools-only regardless of mode.
 > - **‡ unknown** — Letta can't be exercised without standing up a Letta server + model;
 >   left untested rather than guessed.
 > - Every cell on the proxy side was confirmed via a raw stdio handshake (`initialize`
