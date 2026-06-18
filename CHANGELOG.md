@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- `render` example: point `sample_mcpServers.json` at Render's live OpenAPI spec
+  (`https://api-docs.render.com/openapi/render-public-api-1.json`). The previous
+  id-based URL 302-redirects to `/404`, so the example registered **zero tools**.
+  Now matches the URL already used in `README.md` and
+  `examples/render-claude_desktop_config.json`.
+
 ## 0.3.3
 
 ### Fixed
