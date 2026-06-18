@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "netlify": {
+      "command": "uvx",
+      "args": [
+        "mcp-openapi-proxy"
+      ],
+      "env": {
+        "OPENAPI_SPEC_URL": "https://open-api.netlify.com/swagger.json",
+        "OPENAPI_SPEC_FORMAT": "json",
+        "TOOL_WHITELIST": "/sites,/deploys/{deploy_id},/builds/{build_id}",
+        "API_KEY": "${NETLIFY_API_KEY}"
+      }
+    }
+  }
+}
