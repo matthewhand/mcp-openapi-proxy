@@ -148,14 +148,14 @@ The example configurations below were exercised against the live APIs, and the p
 | flyio | 34–35 | apps + machine health | `API_KEY` |
 | slack | 7 (exact dot-path whitelist until #27 fix) | `auth.test` + `postMessage` | `API_KEY` |
 | netbox | 9 (whitelist `/ipam/ip-addresses`) | IPAM write + read | `API_KEY` + `API_AUTH_TYPE=Token` |
-| homeassistant | 6 | `get_config` (200) + `call_service` (light.turn_on, 200) | `SERVER_URL_OVERRIDE` + `EXTRA_HEADERS` (`Authorization: Bearer ${HA_TOKEN}`) |
+| homeassistant | 21 | `get_config` (200) + `call_service` (light.turn_on, 200) | `SERVER_URL_OVERRIDE` + `API_KEY` (`${HA_TOKEN}`, sent as Bearer) |
 
 ### Client matrix
 
 | Agent CLI | Model used (live test) | MCP attach mechanism | Tool calls | Prompts/Resources surfaced to model? |
 |---|---|---|---|---|
 | **opencode** | (CLI default) | `~/.config/opencode/opencode.json` `mcp` | ✅ native | **prompts: ✅ (slash) · resources: ✅** — most complete ‖ |
-| Codex | `gpt-5-codex` (OpenAI API) | `codex exec -c mcp_servers.*` | ✅ native | prompts: ❌ (no prompt meta-tools) · resources: ✅ (`read_mcp_resource`) ‖ |
+| Codex | `gpt-5-codex` (OpenAI API) | `codex exec -c mcp_servers.*` | ✅ native | prompts: ❌ low-level · ✅ fastmcp (via `call_function`→`get_prompt`) · resources: ✅ (`read_mcp_resource`) ‖ |
 | Kilocode | `kilo-auto/free` | global `settings/mcp_settings.json` | ✅ native | prompts: ❌ (no prompt mechanism) · resources: ✅ (`access_mcp_resource`) ‖ |
 | Qwen | `agent` group via local LiteLLM gateway | project `.qwen/settings.json` | ✅ native (live invoke auth-blocked) | prompts: ✅ (slash `/summarize_spec`) · resources: ❌ (no client support) ‖ |
 | Gemini | Google OAuth free tier (CLI default model) | project `.gemini/settings.json` `mcpServers` | ✅ native | prompts: interactive slash only · resources: interactive `@` only (neither reaches the model headless) ‖ |
@@ -167,11 +167,17 @@ The example configurations below were exercised against the live APIs, and the p
 > resources. **mcp-openapi-proxy serves all three, advertised by default since 0.3.0.**
 > Whether they reach the model is up to the *client*, and that varies:
 >
-> - **‖ re-verified 2026-06-14 against the published 0.3.0 release** with **no** flags set
->   (validating the default-on advertising), driving each **real client binary**.
+> - **‖ re-verified 2026-06-15 against the published 0.3.3 release** with **no** flags set
+>   (validating the default-on advertising), driving each **real client binary**, in
+>   **both** server modes (low-level and FastMCP simple). Per-client results were the
+>   same across modes except where noted.
 > - **Tools** work on every client tested. **Prompts→model**: opencode & Qwen (slash
 >   commands); Gemini interactive-only. **Resources→model**: opencode, Codex, Kilocode.
->   **opencode is the only client that surfaces all three.** Vibe is tools-only.
+>   **opencode is the only client that surfaces all three** in any mode.
+> - **FastMCP simple mode exception:** a client with no native prompt surface can still
+>   reach prompts through the static `call_function`→`get_prompt` indirection. Observed
+>   with **Codex** (prompts ❌ in low-level, ✅ in FastMCP simple mode). Vibe stays
+>   tools-only regardless of mode.
 > - **‡ unknown** — Letta can't be exercised without standing up a Letta server + model;
 >   left untested rather than guessed.
 > - Every cell on the proxy side was confirmed via a raw stdio handshake (`initialize`
@@ -917,8 +923,13 @@ Tips: set `IGNORE_SSL_TOOLS=true` only if your host serves a self-signed/mismatc
 <details>
 <summary><b>Home Assistant Example</b> — control your smart home; <code>call_service</code> needs the >= 0.3.3 path-param body fix</summary>
 
-Exposes a small generic slice of the Home Assistant REST API: `get_config`, `list_states`,
-`get_state`, `list_services`, `call_service`, `get_history`.
+Exposes a generic slice of the [Home Assistant REST API](https://developers.home-assistant.io/docs/api/rest/)
+(21 operations) — read state (`get_config`, `list_states`, `get_state`, `list_services`,
+`get_history`/`get_history_now`, `get_logbook`, `list_calendars`, `get_calendar_events`,
+`get_camera_image`, `get_error_log`, `list_components`, `list_events`, `get_api_status`) and
+act (`call_service`, `set_state`, `delete_state`, `fire_event`, `render_template`,
+`check_config`, `handle_intent`). HA ships no official OpenAPI spec, so this is hand-rolled
+from the official docs.
 
 #### 1. Verify the OpenAPI specification
 
@@ -937,7 +948,7 @@ curl https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/refs/heads/
             "env": {
                 "OPENAPI_SPEC_URL": "https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/refs/heads/main/examples/homeassistant.openapi.json",
                 "SERVER_URL_OVERRIDE": "http://homeassistant.local:8123",
-                "EXTRA_HEADERS": "Authorization: Bearer ${HA_TOKEN}"
+                "API_KEY": "${HA_TOKEN}"
             }
         }
     }
@@ -946,7 +957,7 @@ curl https://raw.githubusercontent.com/matthewhand/mcp-openapi-proxy/refs/heads/
 
 Key configuration points:
 - `SERVER_URL_OVERRIDE` — your instance base URL, e.g. `http://homeassistant.local:8123` or `http://<ha-host>:8123`.
-- `HA_TOKEN` — a Home Assistant **long-lived access token** (Profile → Long-Lived Access Tokens), passed via `EXTRA_HEADERS`. Never commit the token; keep it in your environment.
+- `HA_TOKEN` — a Home Assistant **long-lived access token** (Profile → Long-Lived Access Tokens), passed via `API_KEY`; the proxy sends it as `Authorization: Bearer <token>` (its default scheme), so no `EXTRA_HEADERS` needed. Never commit the token; keep it in your environment.
 - `call_service` requires **mcp-openapi-proxy >= 0.3.3**: earlier versions leaked the `{domain}`/`{service}` path params into the JSON body, which Home Assistant rejects with HTTP 400.
 
 #### 3. Testing
