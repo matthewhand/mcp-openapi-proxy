@@ -202,6 +202,113 @@ class TestInputSchemaGeneration(unittest.TestCase):
         self.assertEqual(ids_prop["type"], "array")
         self.assertEqual(ids_prop.get("items"), {"type": "string"})
 
+    def test_fastmcp_registers_all_openapi_methods(self):
+        import json
+        import os
+        from mcp_openapi_proxy import server_fastmcp
+
+        spec = {
+            "openapi": "3.0.0",
+            "servers": [{"url": "https://dummy-base.com"}],
+            "paths": {
+                "/diagnostics": {
+                    "head": {
+                        "summary": "Check diagnostics metadata",
+                        "responses": {"200": {"description": "OK"}},
+                    },
+                    "options": {
+                        "summary": "List diagnostics capabilities",
+                        "responses": {"204": {"description": "No Content"}},
+                    },
+                    "trace": {
+                        "summary": "Trace diagnostics request",
+                        "responses": {"200": {"description": "OK"}},
+                    },
+                }
+            },
+        }
+        original_fetch = server_fastmcp.fetch_openapi_spec
+        server_fastmcp.fetch_openapi_spec = lambda url: spec
+        os.environ["OPENAPI_SPEC_URL"] = "http://dummy_url_methods"
+        try:
+            result = json.loads(server_fastmcp.list_functions(env_key="OPENAPI_SPEC_URL"))
+        finally:
+            server_fastmcp.fetch_openapi_spec = original_fetch
+            os.environ.pop("OPENAPI_SPEC_URL", None)
+
+        methods = {tool["method"] for tool in result if tool.get("path") == "/diagnostics"}
+
+        self.assertEqual(methods, {"HEAD", "OPTIONS", "TRACE"})
+
+    def test_fastmcp_bodyless_methods_use_query_params(self):
+        import json
+        import os
+        from mcp_openapi_proxy import server_fastmcp
+
+        spec = {
+            "openapi": "3.0.0",
+            "servers": [{"url": "https://dummy-base.com"}],
+            "paths": {
+                "/diagnostics": {
+                    "head": {
+                        "summary": "Check diagnostics metadata",
+                        "parameters": [
+                            {
+                                "name": "include",
+                                "in": "query",
+                                "required": False,
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    },
+                },
+            },
+        }
+        captured = {}
+
+        class Response:
+            text = json.dumps({"ok": True})
+
+            def raise_for_status(self):
+                pass
+
+        def fake_request(method, url, **kwargs):
+            captured["method"] = method
+            captured["url"] = url
+            captured["params"] = kwargs.get("params")
+            captured["json"] = kwargs.get("json")
+            captured["headers"] = kwargs.get("headers")
+            return Response()
+
+        original_fetch = server_fastmcp.fetch_openapi_spec
+        original_request = server_fastmcp.requests.request
+        original_whitelist = server_fastmcp.is_tool_whitelisted
+        server_fastmcp.fetch_openapi_spec = lambda url: spec
+        server_fastmcp.requests.request = fake_request
+        server_fastmcp.is_tool_whitelisted = lambda path: True
+        os.environ["OPENAPI_SPEC_URL"] = "http://dummy_url_bodyless"
+        try:
+            result = json.loads(
+                server_fastmcp.call_function(
+                    function_name="head_diagnostics",
+                    parameters={"include": "headers"},
+                    env_key="OPENAPI_SPEC_URL",
+                )
+            )
+        finally:
+            server_fastmcp.fetch_openapi_spec = original_fetch
+            server_fastmcp.requests.request = original_request
+            server_fastmcp.is_tool_whitelisted = original_whitelist
+            os.environ.pop("OPENAPI_SPEC_URL", None)
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(captured["method"], "HEAD")
+        self.assertEqual(captured["url"], "https://dummy-base.com/diagnostics")
+        self.assertEqual(captured["params"], {"include": "headers"})
+        self.assertIsNone(captured["json"])
+        self.assertNotIn("Content-Type", captured["headers"])
+
     def test_input_schema_contents(self):
         # Ensure that one tool is registered for the endpoint using the returned tools list directly
         registered_tools = register_functions(self.dummy_spec)

@@ -35,6 +35,22 @@ spec = None  # Global spec for resources
 # names deduplicated after TOOL_NAME_MAX_LENGTH truncation (issue #11) remain
 # callable via call_function.
 _FUNCTION_OPERATIONS: Dict[str, Dict] = {}
+SUPPORTED_OPENAPI_METHODS = (
+    "get",
+    "post",
+    "put",
+    "delete",
+    "patch",
+    "options",
+    "head",
+    "trace",
+)
+BODYLESS_OPENAPI_METHODS = (
+    "get",
+    "head",
+    "options",
+    "trace",
+)
 
 
 # --- Native MCP prompts & resources for FastMCP/simple mode ---
@@ -74,7 +90,7 @@ def _spec_file_resource() -> str:
 
 @mcp.prompt(name="summarize_spec", description="Summarizes the OpenAPI specification")
 def _summarize_spec_prompt() -> str:
-    return ("This OpenAPI spec defines endpoints, parameters, and responses—a "
+    return ("This OpenAPI spec defines endpoints, parameters, and responses - a "
             "blueprint for developers to integrate effectively.")
 
 
@@ -145,7 +161,7 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
             if not method:
                 logger.debug(f"Method is empty for {path}")
                 continue
-            if method.lower() not in ["get", "post", "put", "delete", "patch"]:
+            if method.lower() not in SUPPORTED_OPENAPI_METHODS:
                 logger.debug(f"Skipping unsupported method: {method}")
                 continue
             raw_name = f"{method.upper()} {path}"
@@ -320,7 +336,7 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
         logger.debug(f"Checking path: {path}")
         for method, operation in path_item.items():
             logger.debug(f"Checking method: {method} for path: {path}")
-            if method.lower() not in ["get", "post", "put", "delete", "patch"]:
+            if method.lower() not in SUPPORTED_OPENAPI_METHODS:
                 logger.debug(f"Skipping unsupported method: {method}")
                 continue
             raw_name = f"{method.upper()} {path}"
@@ -354,6 +370,7 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
 
     operation = function_def["operation"]
     operation["method"] = function_def["method"]
+    method_lower = function_def["method"].lower()
     headers = handle_auth(operation)
     additional_headers = get_additional_headers()
     headers = {**headers, **additional_headers}
@@ -361,7 +378,7 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
         parameters = {}
     parameters = strip_parameters(parameters)
     logger.debug(f"Parameters after strip: {parameters}")
-    if function_def["method"] != "GET":
+    if method_lower not in BODYLESS_OPENAPI_METHODS:
         headers["Content-Type"] = "application/json"
 
     if not is_tool_whitelisted(function_def["path"]):
@@ -407,7 +424,7 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
     if isinstance(parameters, dict):
         if "stream" in parameters and parameters["stream"]:
             del parameters["stream"]
-        if function_def["method"] == "GET":
+        if method_lower in BODYLESS_OPENAPI_METHODS:
             request_params = parameters
         else:
             request_body = parameters
@@ -425,8 +442,8 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
             method=function_def["method"],
             url=api_url,
             headers=headers,
-            params=request_params if function_def["method"] == "GET" else None,
-            json=request_body if function_def["method"] != "GET" else None,
+            params=request_params if request_params else None,
+            json=request_body,
             verify=verify_ssl_tools
         )
         response.raise_for_status()
