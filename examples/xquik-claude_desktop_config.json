@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "xquik": {
+      "command": "uvx",
+      "args": [
+        "mcp-openapi-proxy"
+      ],
+      "env": {
+        "OPENAPI_SPEC_URL": "https://xquik.com/openapi.json",
+        "TOOL_WHITELIST": "/api/v1/x/tweets/search",
+        "API_KEY": "your-xquik-api-key",
+        "API_AUTH_TYPE": "api-key",
+        "API_AUTH_HEADER": "x-api-key"
+      }
+    }
+  }
+}
