@@ -1,11 +1,13 @@
 import json
 from pathlib import Path
 
+import pytest
 import requests
 
 from mcp_openapi_proxy.openapi import register_functions
 
 
+@pytest.mark.integration
 def test_xquik_example_config_points_to_search_openapi(monkeypatch):
     config_path = Path("examples/xquik-claude_desktop_config.json")
     config = json.loads(config_path.read_text())
