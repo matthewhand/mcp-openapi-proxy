@@ -125,8 +125,7 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
     paths = spec.get("paths", {})
     logger.debug(f"Paths extracted from spec: {list(paths.keys())}")
     if not paths:
-        logger.debug("No paths found in spec.")
-        return json.dumps([])
+        logger.debug("No paths found in spec; registering native helper tools only.")
     functions = {}
     _FUNCTION_OPERATIONS.clear()
     for path, path_item in paths.items():

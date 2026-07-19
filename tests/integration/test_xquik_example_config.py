@@ -3,8 +3,10 @@ from pathlib import Path
 
 import requests
 
+from mcp_openapi_proxy.openapi import register_functions
 
-def test_xquik_example_config_points_to_search_openapi():
+
+def test_xquik_example_config_points_to_search_openapi(monkeypatch):
     config_path = Path("examples/xquik-claude_desktop_config.json")
     config = json.loads(config_path.read_text())
 
@@ -21,3 +23,7 @@ def test_xquik_example_config_points_to_search_openapi():
     assert spec["openapi"].startswith("3.")
     assert spec["info"]["title"] == "Xquik API"
     assert "/api/v1/x/tweets/search" in spec["paths"]
+
+    monkeypatch.setenv("TOOL_WHITELIST", env["TOOL_WHITELIST"])
+    tools = register_functions(spec)
+    assert any(tool.name == "get_v1_x_tweets_search" for tool in tools)
