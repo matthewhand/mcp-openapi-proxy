@@ -25,7 +25,7 @@ import json
 import requests
 from typing import List, Dict, Any, Optional, cast
 import anyio
-from pydantic import AnyUrl
+
 
 from mcp import types
 from urllib.parse import unquote
@@ -68,7 +68,7 @@ ENABLE_PROMPTS = os.getenv("ENABLE_PROMPTS", "true").lower() == "true"
 resources: List[types.Resource] = [
     types.Resource(
         name="spec_file",
-        uri=AnyUrl("file:///openapi_spec.json"),
+        uri="file:///openapi_spec.json",
         description="The raw OpenAPI specification JSON",
     )
 ]
@@ -91,7 +91,7 @@ def _load_additional_resources() -> Dict[str, str]:
         resources.append(
             types.Resource(
                 name=name,
-                uri=AnyUrl(f"file:///{name}"),
+                uri=f"file:///{name}",
                 description=f"Additional resource served from {os.path.basename(path)}",
             )
         )
@@ -364,7 +364,7 @@ async def list_resources(request: types.ListResourcesRequest) -> types.ListResou
         resources.append(
             types.Resource(
                 name="spec_file",
-                uri=AnyUrl("file:///openapi_spec.json"),
+                uri="file:///openapi_spec.json",
                 description="The raw OpenAPI specification JSON",
             )
         )
