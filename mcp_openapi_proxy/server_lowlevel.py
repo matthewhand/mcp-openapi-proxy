@@ -545,14 +545,14 @@ def run_server():
         # Spec fetch + tool registration are lazy (ensure_spec_loaded) so the
         # MCP handshake is never blocked by a slow spec download (issue #28).
         if ENABLE_TOOLS:
-            mcp.request_handlers[types.ListToolsRequest] = list_tools
-            mcp.request_handlers[types.CallToolRequest] = dispatcher_handler
+            mcp.add_request_handler(types.ListToolsRequest, list_tools)
+            mcp.add_request_handler(types.CallToolRequest, dispatcher_handler)
         if ENABLE_RESOURCES:
-            mcp.request_handlers[types.ListResourcesRequest] = list_resources
-            mcp.request_handlers[types.ReadResourceRequest] = read_resource
+            mcp.add_request_handler(types.ListResourcesRequest, list_resources)
+            mcp.add_request_handler(types.ReadResourceRequest, read_resource)
         if ENABLE_PROMPTS:
-            mcp.request_handlers[types.ListPromptsRequest] = list_prompts
-            mcp.request_handlers[types.GetPromptRequest] = get_prompt
+            mcp.add_request_handler(types.ListPromptsRequest, list_prompts)
+            mcp.add_request_handler(types.GetPromptRequest, get_prompt)
         logger.debug("Handlers registered based on capabilities and enablement envvars.")
         asyncio.run(start_server())
     except KeyboardInterrupt:
