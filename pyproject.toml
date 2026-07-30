@@ -12,7 +12,7 @@ authors = [
   { name = "Matthew Hand", email = "11550632+matthewhand@users.noreply.github.com" }
 ]
 dependencies = [
-  "mcp[cli]>=1.2.0",
+  "mcp[cli]>=1.2.0,<2.0.0",
   "python-dotenv>=1.0.1",
   "requests>=2.25.0",
   "fastapi>=0.100.0", # For OpenAPI parsing utils if used later, and data validation
