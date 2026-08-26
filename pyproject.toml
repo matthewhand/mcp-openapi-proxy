@@ -5,14 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mcp-openapi-proxy"
 requires-python = ">=3.10"
-version = "0.3.3"
+version = "0.3.4"
 description = "MCP server for exposing OpenAPI specifications as MCP tools."
 readme = "README.md"
 authors = [
   { name = "Matthew Hand", email = "11550632+matthewhand@users.noreply.github.com" }
 ]
 dependencies = [
-  "mcp[cli]>=1.2.0",
+  # mcp 2.x is a breaking rewrite (FastMCP renamed to MCPServer, types.Resource.uri
+  # became str, ...); both server modes crash on import against it. Pin to 1.x.
+  "mcp[cli]>=1.2.0,<2",
   "python-dotenv>=1.0.1",
   "requests>=2.25.0",
   "fastapi>=0.100.0", # For OpenAPI parsing utils if used later, and data validation

@@ -1,13 +1,25 @@
 # Changelog
 
-## Unreleased
+## 0.3.4
 
 ### Fixed
+- **Fresh-install crash:** the unpinned `mcp[cli]>=1.2.0` dependency began resolving
+  to mcp 2.x, which breaks both server modes at import time — FastMCP mode because
+  `mcp.server.fastmcp` was removed (renamed to `MCPServer`), and low-level mode
+  because `types.Resource.uri` changed from `AnyUrl` to `str`, failing the
+  module-level `Resource` construction. Pinned to the known-good 1.x line
+  (`mcp[cli]>=1.2.0,<2`). Dev environments were unaffected (`uv.lock` pins 1.2.1);
+  only fresh `pip install mcp-openapi-proxy` hit it.
 - `render` example: point `sample_mcpServers.json` at Render's live OpenAPI spec
   (`https://api-docs.render.com/openapi/render-public-api-1.json`). The previous
   id-based URL 302-redirects to `/404`, so the example registered **zero tools**.
   Now matches the URL already used in `README.md` and
   `examples/render-claude_desktop_config.json`.
+
+### Tests
+- Regression test (`tests/unit/test_mcp_dependency_pin.py`): asserts the installed
+  mcp is 1.x, that the declared dependency excludes 2.x, and that both server
+  modes import successfully against the pinned dep.
 
 ## 0.3.3
 
