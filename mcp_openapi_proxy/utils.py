@@ -233,7 +233,17 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
     retrieval fails or stalls. When a fallback exists we fail fast (single
     attempt) instead of burning the full retry budget. Tune with
     OPENAPI_SPEC_CACHE_TTL_SECONDS (default 86400; 0 disables caching).
+    
+    Security: Validates URLs to prevent SSRF attacks and enforces size limits.
     """
+    # SSRF prevention: validate URL before fetching
+    if not url.startswith("file://"):
+        from .security import validate_url_safe, should_allow_local_urls
+        is_safe, error_msg = validate_url_safe(url, allow_local=should_allow_local_urls())
+        if not is_safe:
+            logger.error(f"URL validation failed for {url}: {error_msg}")
+            return None
+    
     fallback = _spec_cache_load(url)
     if fallback is not None:
         retries = 1  # fail fast to the cached copy instead of retrying for ~30s
@@ -244,6 +254,15 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
             if url.startswith("file://"):
                 with open(url[7:], "r") as f:
                     content = f.read()
+                
+                # Check size limit for file-based specs
+                from .security import check_spec_size_limit
+                try:
+                    check_spec_size_limit(content=content)
+                except Exception as e:
+                    logger.error(f"Spec size limit exceeded: {e}")
+                    return None
+                
                 spec_format = os.getenv("OPENAPI_SPEC_FORMAT", "json").lower()
                 logger.debug(f"Using {spec_format.upper()} parser based on OPENAPI_SPEC_FORMAT env var")
                 if spec_format == "yaml":
@@ -264,11 +283,40 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                 # Check IGNORE_SSL_SPEC env var
                 ignore_ssl_spec = os.getenv("IGNORE_SSL_SPEC", "false").lower() in ("true", "1", "yes")
                 verify_ssl_spec = not ignore_ssl_spec
+                
+                # In production, always require SSL verification
+                from .security import is_development_mode
+                if not is_development_mode() and ignore_ssl_spec:
+                    logger.warning("IGNORE_SSL_SPEC is set but ignored in production mode")
+                    verify_ssl_spec = True
+                
                 logger.debug(f"Fetching spec with SSL verification: {verify_ssl_spec} (IGNORE_SSL_SPEC={ignore_ssl_spec})")
-                response = requests.get(url, timeout=10, verify=verify_ssl_spec)
+                
+                # Use streaming to check content length before downloading
+                response = requests.get(url, timeout=10, verify=verify_ssl_spec, stream=True)
                 response.raise_for_status()
+                
+                # Check size limit from Content-Length header
+                from .security import check_spec_size_limit
+                content_length = response.headers.get('content-length')
+                if content_length:
+                    try:
+                        check_spec_size_limit(content_length=int(content_length))
+                    except Exception as e:
+                        logger.error(f"Spec size limit exceeded: {e}")
+                        return None
+                
+                # Read content
                 content = response.text
                 logger.debug(f"Fetched content length: {len(content)} bytes")
+                
+                # Double-check actual size
+                try:
+                    check_spec_size_limit(content=content)
+                except Exception as e:
+                    logger.error(f"Spec size limit exceeded after download: {e}")
+                    return None
+                
                 try:
                     spec = json.loads(content)
                     logger.debug(f"Parsed as JSON from {url}")
@@ -438,12 +486,14 @@ def get_additional_headers() -> Dict[str, str]:
 
     Only the value is split on the first colon, so header values may contain
     colons (e.g. timestamps, URLs).
+    
+    Security: Header values are sanitized to prevent injection attacks.
     """
     headers: Dict[str, str] = {}
     extra_headers = os.getenv("EXTRA_HEADERS")
     if not extra_headers:
         return headers
-    logger.debug(f"Parsing EXTRA_HEADERS: {extra_headers}")
+    logger.debug(f"Parsing EXTRA_HEADERS (length: {len(extra_headers)} chars)")
 
     candidate = extra_headers.strip()
     lines: List[str]
@@ -462,13 +512,18 @@ def get_additional_headers() -> Dict[str, str]:
         # Forms 2 & 3: real newlines and/or literal "\n" sequences.
         lines = extra_headers.replace("\\n", "\n").splitlines()
 
+    # Security: sanitize header values
+    from .security import sanitize_header_value
+    
     for line in lines:
         line = line.strip()
         if ":" in line:
             key, value = line.split(":", 1)
             key, value = key.strip(), value.strip()
             if key and value:
-                headers[key] = value
+                # Sanitize the value to prevent injection attacks
+                sanitized_value = sanitize_header_value(value)
+                headers[key] = sanitized_value
                 logger.debug(f"Added header from EXTRA_HEADERS: '{key}'")
             else:
                 logger.warning(f"Skipping invalid header in EXTRA_HEADERS: '{line}'")

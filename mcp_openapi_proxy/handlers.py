@@ -43,8 +43,9 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
     try:
         function_name = request.params.name
         logger.debug(f"Dispatcher received CallToolRequest for function: {function_name}")
-        api_key = os.getenv("API_KEY")
-        logger.debug(f"API_KEY: {api_key[:5] + '...' if api_key else '<not set>'}")
+        # DO NOT log API keys, even prefixes (security: credential exposure)
+        api_key_set = bool(os.getenv("API_KEY"))
+        logger.debug(f"API_KEY: {'<set>' if api_key_set else '<not set>'}")
         logger.debug(f"STRIP_PARAM: {os.getenv('STRIP_PARAM', '<not set>')}")
         tool = next((t for t in tools if t.name == function_name), None)
         if not tool:

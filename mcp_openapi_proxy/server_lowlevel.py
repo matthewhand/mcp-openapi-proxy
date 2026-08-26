@@ -209,7 +209,9 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
         await ensure_spec_loaded()
         function_name = request.params.name
         logger.debug(f"Dispatcher received CallToolRequest for function: {function_name}")
-        logger.debug(f"API_KEY: {os.getenv('API_KEY', '<not set>')[:5] + '...' if os.getenv('API_KEY') else '<not set>'}")
+        # DO NOT log API keys, even prefixes (security: credential exposure)
+        api_key_set = bool(os.getenv('API_KEY'))
+        logger.debug(f"API_KEY: {'<set>' if api_key_set else '<not set>'}")
         logger.debug(f"STRIP_PARAM: {os.getenv('STRIP_PARAM', '<not set>')}")
         tool = next((t for t in tools if t.name == function_name), None)
         if not tool:
@@ -220,6 +222,17 @@ async def dispatcher_handler(request: types.CallToolRequest) -> types.CallToolRe
             )
         arguments = request.params.arguments or {}
         logger.debug(f"Raw arguments before processing: {arguments}")
+        
+        # Security: validate tool arguments to prevent abuse
+        from mcp_openapi_proxy.security import validate_tool_arguments
+        try:
+            validate_tool_arguments(arguments)
+        except Exception as e:
+            logger.error(f"Tool argument validation failed: {e}")
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text=f"Invalid tool arguments: {str(e)}")],
+                isError=True,
+            )
 
         if openapi_spec_data is None:
             return types.CallToolResult(

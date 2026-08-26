@@ -313,6 +313,15 @@ def register_functions(spec: Dict) -> List[types.Tool]:
             except Exception as e:
                 logger.error(f"Error registering function for {method.upper()} {path}: {e}", exc_info=True)
 
+    # Check tool count limit (security: prevent DoS via excessive tool registration)
+    from .security import check_tools_count_limit
+    try:
+        check_tools_count_limit(len(tools_list))
+    except Exception as e:
+        logger.error(f"Tool count limit exceeded: {e}")
+        # Return empty list to prevent registration, but don't crash
+        return []
+    
     logger.info(f"Successfully registered {len(tools_list)} tools from OpenAPI spec.")
 
     # Update the global/shared tools list if necessary (depends on server implementation)
