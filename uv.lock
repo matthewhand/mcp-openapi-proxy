@@ -407,7 +407,7 @@ cli = [
 
 [[package]]
 name = "mcp-openapi-proxy"
-version = "0.2.1"
+version = "0.3.4"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -431,7 +431,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.100.0" },
     { name = "jmespath", specifier = ">=1.0.1" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.2.0" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.2.0,<2" },
     { name = "openapi-spec-validator", specifier = ">=0.7.1" },
     { name = "prance", specifier = ">=23.6.21.0" },
     { name = "pydantic", specifier = ">=2.0" },
