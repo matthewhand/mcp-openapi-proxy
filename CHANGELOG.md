@@ -1,8 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.3.4
 
 ### Fixed
+- **Pin `mcp` to 1.x** (`mcp[cli]>=1.2.0,<2`). The previous unbounded
+  `mcp>=1.2.0` constraint let a fresh `pip install mcp-openapi-proxy` resolve
+  to the mcp 2.x SDK, a breaking rewrite that crashed **both server modes at
+  import time**: FastMCP mode with `ModuleNotFoundError: No module named
+  'mcp.server.fastmcp'` (renamed to `MCPServer` in 2.x), and low-level mode
+  with a pydantic `ValidationError` constructing `types.Resource`
+  (`uri` field type change). Regression tests added
+  (`tests/unit/test_mcp_version_pin.py`) that fail closed on mcp 2.x and
+  guard the declared constraint so 2.x cannot be silently selected again.
 - `render` example: point `sample_mcpServers.json` at Render's live OpenAPI spec
   (`https://api-docs.render.com/openapi/render-public-api-1.json`). The previous
   id-based URL 302-redirects to `/404`, so the example registered **zero tools**.
