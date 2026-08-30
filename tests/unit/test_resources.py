@@ -64,6 +64,7 @@ def test_fastmcp_list_resources(mock_env):
         tools_json = list_functions(env_key="OPENAPI_SPEC_URL")
         tools = json.loads(tools_json)
         assert any(item["name"] == "list_resources" for item in tools), "list_resources not found"
+        assert not any(item["name"] == "get_tasks_id" for item in tools), "pathless spec exposed a synthetic endpoint"
         result = call_function(function_name="list_resources", parameters={}, env_key="OPENAPI_SPEC_URL")
         resources = json.loads(result)
         assert len(resources) == 1, "Expected one resource"

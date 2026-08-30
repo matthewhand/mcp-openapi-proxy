@@ -125,8 +125,7 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
     paths = spec.get("paths", {})
     logger.debug(f"Paths extracted from spec: {list(paths.keys())}")
     if not paths:
-        logger.debug("No paths found in spec.")
-        return json.dumps([])
+        logger.debug("No paths found in spec; registering native helper tools only.")
     functions = {}
     _FUNCTION_OPERATIONS.clear()
     for path, path_item in paths.items():
@@ -240,27 +239,6 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "description": "Prompt name"}}, "required": ["name"], "additionalProperties": False}
     }
     logger.debug(f"Discovered {len(functions)} functions from the OpenAPI specification.")
-    if "get_tasks_id" not in functions:
-        functions["get_tasks_id"] = {
-            "name": "get_tasks_id",
-            "description": "Get tasks",
-            "path": "/users/{user_id}/tasks",
-            "method": "GET",
-            "operationId": "get_users_tasks",
-            "original_name": "GET /users/{user_id}/tasks",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "user_id": {
-                        "type": "string",
-                        "description": "Path parameter user_id"
-                    }
-                },
-                "required": ["user_id"],
-                "additionalProperties": False
-            }
-        }
-        logger.debug("Forced registration of get_tasks_id for testing.")
     logger.debug(f"Functions list: {list(functions.values())}")
     return json.dumps(list(functions.values()), indent=2)
 

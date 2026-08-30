@@ -1,4 +1,5 @@
 import os
+import importlib
 import pytest
 import sys
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -21,10 +22,12 @@ def reset_env_and_module(request):
         if key.startswith("OPENAPI_SPEC_URL"):
             del os.environ[key]
     os.environ["DEBUG"] = "true"
-    # Reload server_fastmcp to reset tools implicitly
+    # Reload the existing module object so functions imported by test modules
+    # continue to share the patched module globals.
     if 'mcp_openapi_proxy.server_fastmcp' in sys.modules:
-        del sys.modules['mcp_openapi_proxy.server_fastmcp']
-    import mcp_openapi_proxy.server_fastmcp  # Fresh import re-registers tools
+        importlib.reload(sys.modules['mcp_openapi_proxy.server_fastmcp'])
+    else:
+        import mcp_openapi_proxy.server_fastmcp
     yield env_key
     # Restore original env
     os.environ.clear()

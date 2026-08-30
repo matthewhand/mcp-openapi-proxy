@@ -24,7 +24,7 @@ def test_lowlevel_get_prompt_valid(mock_env):
     assert "blueprint" in result.messages[0].content.text, "Expected 'blueprint' in prompt response"
 
 def test_fastmcp_list_prompts(mock_env):
-    with patch('mcp_openapi_proxy.utils.fetch_openapi_spec', return_value={"paths": {}}):
+    with patch('mcp_openapi_proxy.server_fastmcp.fetch_openapi_spec', return_value={"paths": {}}):
         tools_json = list_functions(env_key="OPENAPI_SPEC_URL")
         tools = json.loads(tools_json)
         assert any(t["name"] == "list_prompts" for t in tools), "list_prompts not found"
