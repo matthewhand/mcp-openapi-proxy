@@ -165,6 +165,16 @@ def test_http_tools_list_no_session_header(spec_env):
         assert "tools" in result
         assert "ttlMs" in result
         assert result["ttlMs"] >= 0
+        # Issue #69: every tool carries MCP annotations (readOnlyHint on GET /ping).
+        assert result["tools"]
+        for tool in result["tools"]:
+            annotations = tool.get("annotations")
+            assert isinstance(annotations, dict), f"{tool.get('name')} missing annotations"
+        assert any(
+            (t.get("annotations") or {}).get("readOnlyHint") is True
+            or (t.get("annotations") or {}).get("destructiveHint") is True
+            for t in result["tools"]
+        )
 
 
 def test_http_tools_call_no_prior_handshake(spec_env, monkeypatch):

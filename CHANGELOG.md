@@ -35,6 +35,11 @@
   (`mcp rpc method=tools/list` or `mcp rpc method=tools/call name=…`) so
   uvicorn `POST /mcp 200` can be attributed. Arguments, Authorization,
   tokens, and request bodies are not logged. Stdio is unchanged.
+- MCP `annotations` on every OpenAPI-derived `tools/list` entry (`title`,
+  `readOnlyHint` / `idempotentHint` for GET and clearly read-ish POST,
+  `destructiveHint` for other methods). Hints are derived from the HTTP
+  method (Notion pattern). `additionalProperties` and RPC logging are
+  unchanged.
 
 ### Breaking
 - Requires `mcp` 2.x. `uvx mcp-openapi-proxy` without a `<2` pin now

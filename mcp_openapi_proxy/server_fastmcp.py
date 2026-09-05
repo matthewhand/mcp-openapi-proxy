@@ -17,7 +17,13 @@ import requests
 from typing import Dict, Any, Optional
 from mcp.server.mcpserver import MCPServer
 from mcp_openapi_proxy.logging_setup import logger
-from mcp_openapi_proxy.openapi import fetch_openapi_spec, build_base_url, handle_auth
+from mcp import types as mcp_types
+from mcp_openapi_proxy.openapi import (
+    annotations_wire_dict,
+    fetch_openapi_spec,
+    build_base_url,
+    handle_auth,
+)
 from mcp_openapi_proxy.utils import is_tool_whitelisted, normalize_tool_name, strip_parameters, get_additional_headers, deduplicate_tool_name
 from mcp_openapi_proxy.protocol import (
     HEALTHZ_PATH,
@@ -109,7 +115,14 @@ def _whimsical_blog_prompt() -> str:
             "✨ Write the next whimsical chapter.")
 
 
-@mcp.tool()
+@mcp.tool(
+    title="List Functions",
+    annotations=mcp_types.ToolAnnotations(
+        title="List Functions",
+        read_only_hint=True,
+        idempotent_hint=True,
+    ),
+)
 def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
     """Lists available functions derived from the OpenAPI specification."""
     logger.debug("Executing list_functions tool.")
@@ -224,7 +237,8 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                 "method": method.upper(),
                 "operationId": operation.get("operationId"),
                 "original_name": raw_name,
-                "inputSchema": input_schema
+                "inputSchema": input_schema,
+                "annotations": annotations_wire_dict(method, function_name, operation),
             }
             _FUNCTION_OPERATIONS[function_name] = {
                 "path": path,
@@ -239,7 +253,8 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         "method": None,
         "operationId": None,
         "original_name": "list_resources",
-        "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+        "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        "annotations": annotations_wire_dict(None, "list_resources", read_only=True),
     }
     functions["read_resource"] = {
         "name": "read_resource",
@@ -249,7 +264,8 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         "method": None,
         "operationId": None,
         "original_name": "read_resource",
-        "inputSchema": {"type": "object", "properties": {"uri": {"type": "string", "description": "Resource URI"}}, "required": ["uri"], "additionalProperties": False}
+        "inputSchema": {"type": "object", "properties": {"uri": {"type": "string", "description": "Resource URI"}}, "required": ["uri"], "additionalProperties": False},
+        "annotations": annotations_wire_dict(None, "read_resource", read_only=True),
     }
     functions["list_prompts"] = {
         "name": "list_prompts",
@@ -259,7 +275,8 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         "method": None,
         "operationId": None,
         "original_name": "list_prompts",
-        "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+        "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        "annotations": annotations_wire_dict(None, "list_prompts", read_only=True),
     }
     functions["get_prompt"] = {
         "name": "get_prompt",
@@ -269,7 +286,8 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         "method": None,
         "operationId": None,
         "original_name": "get_prompt",
-        "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "description": "Prompt name"}}, "required": ["name"], "additionalProperties": False}
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "description": "Prompt name"}}, "required": ["name"], "additionalProperties": False},
+        "annotations": annotations_wire_dict(None, "get_prompt", read_only=True),
     }
     logger.debug(f"Discovered {len(functions)} functions from the OpenAPI specification.")
     if "get_tasks_id" not in functions:
@@ -291,13 +309,24 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                 },
                 "required": ["user_id"],
                 "additionalProperties": False
-            }
+            },
+            "annotations": annotations_wire_dict(
+                "GET",
+                "get_tasks_id",
+                {"summary": "Get tasks", "operationId": "get_users_tasks"},
+            ),
         }
         logger.debug("Forced registration of get_tasks_id for testing.")
     logger.debug(f"Functions list: {list(functions.values())}")
     return json.dumps(list(functions.values()), indent=2)
 
-@mcp.tool()
+@mcp.tool(
+    title="Call Function",
+    annotations=mcp_types.ToolAnnotations(
+        title="Call Function",
+        destructive_hint=True,
+    ),
+)
 def call_function(*, function_name: str = "", parameters: Optional[Dict] = None, env_key: str = "OPENAPI_SPEC_URL", handle: str = "") -> str:
     """Calls a function derived from the OpenAPI specification.
 
