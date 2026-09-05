@@ -7,7 +7,7 @@ import json
 import re # Import the re module
 import requests
 import yaml
-from typing import Dict, Optional, List, Union
+from typing import Dict, Optional, List, Union, Set
 from urllib.parse import unquote, quote
 from mcp import types
 from mcp_openapi_proxy.utils import normalize_tool_name
@@ -15,6 +15,114 @@ from .logging_setup import logger
 
 # Define the required tool name pattern
 TOOL_NAME_REGEX = r"^[a-zA-Z0-9_-]{1,64}$"
+
+# First-token / token sets used to treat a POST as read-ish (search/query/list).
+# Write tokens win so getOrCreate / searchAndCreate stay destructive.
+_READISH_TOKENS = frozenset({
+    "get", "list", "search", "query", "find", "fetch", "filter",
+    "lookup", "read", "count", "exists", "check", "status", "ping",
+    "health", "describe", "show", "view",
+})
+_WRITE_TOKENS = frozenset({
+    "create", "update", "delete", "post", "put", "patch", "add",
+    "remove", "set", "send", "write", "upsert",
+})
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+_IDEMPOTENT_WRITE_METHODS = frozenset({"PUT", "DELETE"})
+
+
+def _identifier_tokens(text: str) -> List[str]:
+    """Split camelCase / snake_case / kebab-case into lowercase tokens."""
+    if not text:
+        return []
+    spaced = re.sub(r"(?<=[a-z0-9])([A-Z])", r" \1", text)
+    spaced = spaced.replace("_", " ").replace("-", " ")
+    return [part.lower() for part in re.findall(r"[A-Za-z0-9]+", spaced)]
+
+
+def human_tool_title(tool_name: str, operation: Optional[Dict] = None) -> str:
+    """Human title for annotations.title: short summary, else operationId, else tool name."""
+    operation = operation or {}
+    summary = operation.get("summary")
+    if isinstance(summary, str):
+        summary = summary.strip()
+        if summary and len(summary) <= 80:
+            return summary
+    op_id = operation.get("operationId")
+    if isinstance(op_id, str) and op_id.strip():
+        return _humanize_identifier(op_id)
+    return _humanize_identifier(tool_name)
+
+
+def _humanize_identifier(name: str) -> str:
+    tokens = _identifier_tokens(name)
+    if not tokens:
+        return name
+    return " ".join(token[:1].upper() + token[1:] for token in tokens)
+
+
+def _is_readish_post(operation: Optional[Dict]) -> bool:
+    """True when a POST looks like search/query/list rather than a write."""
+    operation = operation or {}
+    texts = []
+    for key in ("operationId", "summary"):
+        val = operation.get(key)
+        if isinstance(val, str) and val.strip():
+            texts.append(val)
+    if not texts:
+        return False
+    tokens: Set[str] = set()
+    first_tokens: List[str] = []
+    for text in texts:
+        parts = _identifier_tokens(text)
+        tokens.update(parts)
+        if parts:
+            first_tokens.append(parts[0])
+    if tokens & _WRITE_TOKENS:
+        return False
+    return any(first in _READISH_TOKENS for first in first_tokens)
+
+
+def build_tool_annotations(
+    method: Optional[str],
+    tool_name: str,
+    operation: Optional[Dict] = None,
+    *,
+    read_only: Optional[bool] = None,
+) -> types.ToolAnnotations:
+    """MCP ToolAnnotations derived from the OpenAPI HTTP method (Notion pattern).
+
+    GET/HEAD/OPTIONS (and clearly read-ish POST) set readOnlyHint + idempotentHint.
+    Other methods set destructiveHint; PUT/DELETE also set idempotentHint.
+    """
+    title = human_tool_title(tool_name, operation)
+    method_upper = (method or "").upper()
+    if read_only is True or method_upper in _SAFE_METHODS or (
+        method_upper == "POST" and _is_readish_post(operation)
+    ):
+        return types.ToolAnnotations(
+            title=title,
+            read_only_hint=True,
+            idempotent_hint=True,
+        )
+    return types.ToolAnnotations(
+        title=title,
+        destructive_hint=True,
+        idempotent_hint=True if method_upper in _IDEMPOTENT_WRITE_METHODS else None,
+    )
+
+
+def annotations_wire_dict(
+    method: Optional[str],
+    tool_name: str,
+    operation: Optional[Dict] = None,
+    *,
+    read_only: Optional[bool] = None,
+) -> Dict:
+    """CamelCase annotations object for JSON tools/list (and simple-mode catalogs)."""
+    return build_tool_annotations(
+        method, tool_name, operation, read_only=read_only
+    ).model_dump(by_alias=True, exclude_none=True)
 
 def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
     """Fetch and parse an OpenAPI specification from a URL with retries."""
@@ -294,11 +402,16 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                                #         input_schema['required'].append('body')
 
 
-                # Create and register the tool
+                # Create and register the tool. Annotations follow MCP ToolAnnotations
+                # (title + method-derived hints) so clients such as Gemini Spark see
+                # the same fingerprint as Notion/Linear.
+                annotations = build_tool_annotations(method, function_name, operation)
                 tool = types.Tool(
                     name=function_name,
+                    title=annotations.title,
                     description=description,
                     inputSchema=input_schema,
+                    annotations=annotations,
                 )
                 tools_list.append(tool)
                 registered_names.add(function_name)

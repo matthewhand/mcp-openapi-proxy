@@ -39,6 +39,8 @@ Mcp-Name: get_ping
 - Gateways route on `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`.
 - Header/body mismatch is rejected (`-32020`).
 - `tools/list` (and other list/read results) include `ttlMs` and `cacheScope`.
+- Each OpenAPI-derived tool includes MCP `annotations` (`title` plus
+  method-derived `readOnlyHint` / `idempotentHint` or `destructiveHint`).
 
 Stdio remains dual-stack: the SDK still answers `initialize` so Codex / Gemini /
 Qwen keep working, and it also answers `server/discover` + per-request `_meta`

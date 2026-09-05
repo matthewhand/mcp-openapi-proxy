@@ -68,6 +68,7 @@ The package offers two operational modes:
 ## Features
 
 - **Dynamic Tool Generation:** Automatically creates MCP tools from OpenAPI endpoint definitions.
+- **Tool Annotations:** Every OpenAPI-derived tool includes MCP `annotations` (`title`, plus `readOnlyHint` / `idempotentHint` for GET and clearly read-ish POST, or `destructiveHint` for other methods) so clients such as Gemini Spark see the same fingerprint as Notion/Linear.
 - **Simple Mode Option:** Offers a static configuration alternative via FastMCP mode.
 - **OpenAPI Specification Support:** Compatible with OpenAPI v3 with potential support for v2.
 - **Flexible Filtering:** Allows endpoint filtering through whitelisting by paths or other criteria.
