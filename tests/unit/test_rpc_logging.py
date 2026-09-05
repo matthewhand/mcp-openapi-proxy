@@ -174,7 +174,7 @@ def test_http_logs_list_and_call_without_secrets(spec_env, monkeypatch, caplog):
 
 
 def test_http_logs_method_from_body_without_mcp_headers(spec_env, caplog):
-    """mcp-gateway may omit Mcp-Method; the JSON-RPC method is still logged."""
+    """Body peek still logs when Mcp-Method is absent (SDK then rejects -32020)."""
     from starlette.testclient import TestClient
     import mcp_openapi_proxy.server_lowlevel as sl
 
@@ -196,7 +196,9 @@ def test_http_logs_method_from_body_without_mcp_headers(spec_env, caplog):
                 "MCP-Protocol-Version": "2026-07-28",
             },
         )
-        assert resp.status_code == 200, resp.text
+        assert resp.status_code == 400
+        err = resp.json().get("error") or {}
+        assert err.get("code") == -32020
 
     messages = [r.message for r in caplog.records if r.message.startswith("mcp rpc ")]
     assert messages == ["mcp rpc method=tools/list"]
