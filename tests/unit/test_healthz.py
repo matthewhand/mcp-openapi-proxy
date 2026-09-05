@@ -73,7 +73,9 @@ def test_healthz_body_fallback_name_and_default_port(monkeypatch):
 def test_healthz_route_is_get_only_sibling():
     route = healthz_route()
     assert route.path == "/healthz"
-    assert route.methods == {"GET"}
+    # Starlette adds HEAD alongside GET; MCP methods must not be on this route.
+    assert "GET" in (route.methods or set())
+    assert not (route.methods or set()) & {"POST", "DELETE"}
 
 
 def test_http_healthz_200_body_shape(spec_env, monkeypatch):
