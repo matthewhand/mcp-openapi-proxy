@@ -140,6 +140,8 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `OPENAPI_SPEC_CACHE_TTL_SECONDS`: (Optional) Live-first disk cache for remote specs: the cached copy is served only when the live fetch fails or stalls (and respawned servers fail fast to it). Default `86400`; set `0` to disable.
 - `ENABLE_TOOLS` / `ENABLE_PROMPTS` / `ENABLE_RESOURCES`: (Optional) Feature gates for the three MCP surfaces in low-level mode; each defaults to enabled. Disabling a feature removes its handlers and its capability advertisement.
 - `CAPABILITIES_TOOLS` / `CAPABILITIES_PROMPTS` / `CAPABILITIES_RESOURCES`: (Optional) Advertise `listChanged` on the corresponding capability (for clients that key on it). Default `false`.
+- `MCP_SERVER_NAME`: (Optional) Identity advertised in `serverInfo` / `server/discover`. Set this to the proxied API (e.g. `gpt-terminal-plus`, `flyio`) so multiple instances are not all called `openapi-proxy`. Falls back to the OpenAPI file stem or spec-URL host, then `openapi-proxy`.
+- `MCP_SERVER_TITLE` / `MCP_SERVER_DESCRIPTION`: (Optional) Display title and description alongside the name.
 - `MCP_TRANSPORT`: (Optional) `stdio` (default) or `streamable-http` for native stateless Streamable HTTP (MCP 2026-07-28; no `Mcp-Session-Id`).
 - `MCP_HOST` / `MCP_PORT` / `MCP_PATH`: (Optional) HTTP bind address (`127.0.0.1`), port (`8000`), and path (`/mcp`) when `MCP_TRANSPORT=streamable-http`.
 - `MCP_JSON_RESPONSE`: (Optional) `true` (default) returns JSON instead of SSE on Streamable HTTP.

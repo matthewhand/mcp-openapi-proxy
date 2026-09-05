@@ -21,6 +21,9 @@ from mcp_openapi_proxy.openapi import fetch_openapi_spec, build_base_url, handle
 from mcp_openapi_proxy.utils import is_tool_whitelisted, normalize_tool_name, strip_parameters, get_additional_headers, deduplicate_tool_name
 from mcp_openapi_proxy.protocol import (
     PACKAGE_VERSION,
+    advertised_server_description,
+    advertised_server_name,
+    advertised_server_title,
     cache_hints,
     json_response,
     mcp_host,
@@ -38,8 +41,10 @@ import sys
 logger.debug(f"Server CWD: {os.getcwd()}")
 
 mcp = MCPServer(
-    "OpenApiProxy-Fast",
+    advertised_server_name(),
     version=PACKAGE_VERSION,
+    title=advertised_server_title(),
+    description=advertised_server_description(),
     cache_hints=cache_hints(),
     request_state_security=request_state_security(),
 )

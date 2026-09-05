@@ -21,6 +21,9 @@
   two-step flow works across instances.
 - `MCP_REQUEST_STATE_KEY` so MRTR `requestState` can be verified across
   processes (shared HMAC). Unset keeps the SDK process-local default.
+- `MCP_SERVER_NAME` (plus optional `MCP_SERVER_TITLE` / `MCP_SERVER_DESCRIPTION`)
+  so `serverInfo` matches the proxied API instead of a generic
+  `OpenApiProxy-LowLevel` on every instance.
 - Tests for handshake-free list/call, duplicate request ids, mixed-version
   clients, and multi-instance round-robin without sticky routing.
 

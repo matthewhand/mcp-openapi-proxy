@@ -32,6 +32,9 @@ from mcp_openapi_proxy.utils import (
 )
 from mcp_openapi_proxy.protocol import (
     PACKAGE_VERSION,
+    advertised_server_description,
+    advertised_server_name,
+    advertised_server_title,
     cache_hints,
     json_response,
     mcp_host,
@@ -485,10 +488,17 @@ def build_server() -> Server:
     Rebuilt in run_server() so gateway monkeypatches of dispatcher_handler
     are picked up (the v2 Server captures on_* at construction time).
     """
+    name = advertised_server_name()
     kwargs: Dict[str, Any] = {
         "version": PACKAGE_VERSION,
         "cache_hints": cache_hints(),
     }
+    title = advertised_server_title()
+    if title:
+        kwargs["title"] = title
+    description = advertised_server_description()
+    if description:
+        kwargs["description"] = description
     if ENABLE_TOOLS:
         kwargs["on_list_tools"] = list_tools
         kwargs["on_call_tool"] = dispatcher_handler
@@ -498,7 +508,8 @@ def build_server() -> Server:
     if ENABLE_PROMPTS:
         kwargs["on_list_prompts"] = list_prompts
         kwargs["on_get_prompt"] = get_prompt
-    return Server("OpenApiProxy-LowLevel", **kwargs)
+    logger.debug(f"Building MCP server identity name={name!r} title={title!r}")
+    return Server(name, **kwargs)
 
 
 mcp = build_server()

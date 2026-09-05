@@ -65,6 +65,45 @@ def transport_name() -> str:
     return "stdio"
 
 
+def advertised_server_name() -> str:
+    """Identity reported in serverInfo / initialize / server/discover.
+
+    Prefer an explicit MCP_SERVER_NAME (gateway instances set this to the
+    proxied API: flyio, gpt-terminal-plus, …). Otherwise derive a stable
+    slug from OPENAPI_SPEC_URL so two uvx processes are not both called
+    OpenApiProxy-LowLevel.
+    """
+    explicit = (os.getenv("MCP_SERVER_NAME") or os.getenv("OPENAPI_SERVER_NAME") or "").strip()
+    if explicit:
+        return explicit
+    url = (os.getenv("OPENAPI_SPEC_URL") or "").strip()
+    if url.startswith("file://"):
+        from pathlib import Path
+
+        stem = Path(url[7:].split("?", 1)[0]).stem
+        if stem and stem not in (".",):
+            return stem
+    elif "://" in url:
+        from urllib.parse import urlparse
+
+        host = (urlparse(url).hostname or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        if host:
+            return host
+    return "openapi-proxy"
+
+
+def advertised_server_title() -> Optional[str]:
+    title = (os.getenv("MCP_SERVER_TITLE") or "").strip()
+    return title or None
+
+
+def advertised_server_description() -> Optional[str]:
+    desc = (os.getenv("MCP_SERVER_DESCRIPTION") or "").strip()
+    return desc or None
+
+
 def mcp_host() -> str:
     return os.getenv("MCP_HOST", "127.0.0.1")
 
