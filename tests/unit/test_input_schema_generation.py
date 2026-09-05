@@ -76,7 +76,7 @@ class TestInputSchemaGeneration(unittest.TestCase):
         }
         registered_tools = register_functions(spec)
         self.assertEqual(len(registered_tools), 1)
-        prop = registered_tools[0].inputSchema["properties"]["tags"]
+        prop = registered_tools[0].input_schema["properties"]["tags"]
         self.assertEqual(prop["type"], "array")
         self.assertEqual(prop.get("items"), {"type": "string"})
 
@@ -105,7 +105,7 @@ class TestInputSchemaGeneration(unittest.TestCase):
         }
         registered_tools = register_functions(spec)
         self.assertEqual(len(registered_tools), 1)
-        prop = registered_tools[0].inputSchema["properties"]["ids"]
+        prop = registered_tools[0].input_schema["properties"]["ids"]
         self.assertEqual(prop["type"], "array")
         self.assertEqual(prop.get("items"), {"type": "string"})
 
@@ -146,7 +146,7 @@ class TestInputSchemaGeneration(unittest.TestCase):
         }
         registered_tools = register_functions(spec)
         self.assertEqual(len(registered_tools), 1)
-        props = registered_tools[0].inputSchema["properties"]
+        props = registered_tools[0].input_schema["properties"]
         self.assertEqual(props["tags"]["type"], "array")
         self.assertEqual(props["tags"].get("items"), {"type": "string"})
         self.assertEqual(props["photoUrls"]["type"], "array")
@@ -207,7 +207,7 @@ class TestInputSchemaGeneration(unittest.TestCase):
         registered_tools = register_functions(self.dummy_spec)
         self.assertEqual(len(registered_tools), 1)
         tool = registered_tools[0]
-        input_schema = tool.inputSchema
+        input_schema = tool.input_schema
 
         expected_properties = {
             "owner": {"type": "string", "description": "Owner name"},

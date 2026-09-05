@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.4.0
+
+### Changed
+- **MCP Python SDK 2.x / protocol 2026-07-28.** The server is dual-stack:
+  2026-era clients send self-contained requests (no `initialize` handshake,
+  no `Mcp-Session-Id`); 2025-era clients may still `initialize` over stdio.
+  See [docs/MIGRATION-0.4.md](docs/MIGRATION-0.4.md).
+- Dependency: `mcp[cli]>=2.0.0,<3` (was `>=1.2.0,<2`). FastMCP is now
+  `MCPServer`; resource URIs are plain strings; handler fields are snake_case.
+- Streamable HTTP is a first-class transport (`MCP_TRANSPORT=streamable-http`)
+  and is **stateless**: every POST is self-contained, no sticky sessions.
+
+### Added
+- `ttlMs` / `cacheScope` on `tools/list`, `prompts/list`, `resources/list`,
+  `resources/read` (SEP-2549). Tune with `MCP_LIST_TTL_MS` / `MCP_READ_TTL_MS`.
+- `server/discover` (via the SDK) for version negotiation.
+- Explicit `handle` on simple-mode `list_functions` output; `call_function`
+  accepts `handle=` and rebuilds the operation map from the spec, so a
+  two-step flow works across instances.
+- `MCP_REQUEST_STATE_KEY` so MRTR `requestState` can be verified across
+  processes (shared HMAC). Unset keeps the SDK process-local default.
+- Tests for handshake-free list/call, duplicate request ids, mixed-version
+  clients, and multi-instance round-robin without sticky routing.
+
+### Breaking
+- Requires `mcp` 2.x. `uvx mcp-openapi-proxy` without a `<2` pin now
+  resolves correctly; 0.3.4 remains the last 1.x-SDK release.
+- Low-level handler registration is constructor `on_*` (SDK change). Gateway
+  wrappers that assigned `server.request_handlers[...]` must wrap
+  `dispatcher_handler` before `run_server()` (rebuilds the Server).
+- `types.Resource.uri` is `str`, not `AnyUrl`. Python attribute access is
+  snake_case (`input_schema`, `is_error`, `mime_type`); the JSON wire is
+  unchanged camelCase.
+
 ## 0.3.4
 
 ### Fixed

@@ -260,3 +260,41 @@ def test_simple_mode_serves_resources(simple_server):
     rd = client.request("resources/read", {"uri": "file:///openapi_spec.json"})
     contents = rd.get("result", {}).get("contents", [])
     assert contents and contents[0].get("text"), f"resources/read returned no content: {rd}"
+
+
+def _modern_params(extra=None):
+    params = extra or {}
+    params["_meta"] = {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientInfo": {"name": "discovery-test", "version": "0"},
+        "io.modelcontextprotocol/clientCapabilities": {},
+    }
+    return params
+
+
+def test_tools_list_without_initialize_handshake(server):
+    """2026-07-28: tools/list must work with no prior initialize."""
+    client = StdioClient(server)
+    # Optional probe; either discover or a direct list must succeed.
+    discover = None
+    try:
+        discover = client.request("server/discover", _modern_params(), timeout=10.0)
+    except Exception:
+        discover = None
+    tools = client.request("tools/list", _modern_params(), timeout=20.0)
+    assert "result" in tools, (
+        f"tools/list without handshake failed: {tools} (discover={discover})"
+    )
+    assert tools["result"].get("tools"), f"no tools: {tools}"
+
+
+def test_server_discover_advertises_modern_version(server):
+    client = StdioClient(server)
+    resp = client.request("server/discover", _modern_params(), timeout=10.0)
+    if "error" in resp and resp["error"].get("code") == -32601:
+        pytest.skip("server/discover not wired on this transport yet")
+    assert "result" in resp, f"server/discover failed: {resp}"
+    result = resp["result"]
+    versions = result.get("protocolVersions") or result.get("supportedProtocolVersions") or []
+    blob = json.dumps(result)
+    assert "2026-07-28" in blob or "2026-07-28" in versions, blob

@@ -22,7 +22,8 @@ if uri:
     )
     result = asyncio.new_event_loop().run_until_complete(srv.read_resource(req))
     out["text"] = result.contents[0].text
-    out["mime"] = getattr(result.contents[0], "mimeType", None)
+    content = result.contents[0]
+    out["mime"] = getattr(content, "mime_type", None) or getattr(content, "mimeType", None)
 print(json.dumps(out))
 """
 

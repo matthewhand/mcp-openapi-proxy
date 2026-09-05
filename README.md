@@ -2,6 +2,18 @@
 
 **mcp-openapi-proxy** is a Python package that implements a Model Context Protocol (MCP) server, designed to dynamically expose REST APIs—defined by OpenAPI specifications—as MCP tools. This facilitates seamless integration of OpenAPI-described APIs into MCP-based workflows.
 
+## What's New in 0.4.0
+
+**MCP 2026-07-28 (SDK 2.x).** The proxy is dual-stack: modern clients send
+self-contained requests (no `initialize`, no `Mcp-Session-Id`) and list results
+carry `ttlMs` / `cacheScope`. Legacy stdio clients that still handshake keep
+working. Native Streamable HTTP is available with `MCP_TRANSPORT=streamable-http`
+and is stateless — round-robin load balancing needs no sticky sessions.
+
+See [docs/MIGRATION-0.4.md](docs/MIGRATION-0.4.md) for breaking changes, new
+env vars, and gateway cutover notes. **0.3.4** remains the last release on
+mcp 1.x (`mcp>=1.2.0,<2`).
+
 ## What's New in 0.2.0
 
 **Works with every modern MCP-enabled client we tested.** Strict MCP clients can now discover and call tools — the low-level server advertises correct capabilities and no longer crashes during resource/prompt discovery, and a slow spec download no longer crash-loops short-timeout clients. Verified live against the full list of mainstream agent CLIs:
@@ -128,6 +140,12 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `OPENAPI_SPEC_CACHE_TTL_SECONDS`: (Optional) Live-first disk cache for remote specs: the cached copy is served only when the live fetch fails or stalls (and respawned servers fail fast to it). Default `86400`; set `0` to disable.
 - `ENABLE_TOOLS` / `ENABLE_PROMPTS` / `ENABLE_RESOURCES`: (Optional) Feature gates for the three MCP surfaces in low-level mode; each defaults to enabled. Disabling a feature removes its handlers and its capability advertisement.
 - `CAPABILITIES_TOOLS` / `CAPABILITIES_PROMPTS` / `CAPABILITIES_RESOURCES`: (Optional) Advertise `listChanged` on the corresponding capability (for clients that key on it). Default `false`.
+- `MCP_TRANSPORT`: (Optional) `stdio` (default) or `streamable-http` for native stateless Streamable HTTP (MCP 2026-07-28; no `Mcp-Session-Id`).
+- `MCP_HOST` / `MCP_PORT` / `MCP_PATH`: (Optional) HTTP bind address (`127.0.0.1`), port (`8000`), and path (`/mcp`) when `MCP_TRANSPORT=streamable-http`.
+- `MCP_JSON_RESPONSE`: (Optional) `true` (default) returns JSON instead of SSE on Streamable HTTP.
+- `MCP_LIST_TTL_MS` / `MCP_READ_TTL_MS`: (Optional) `ttlMs` for list results (default `60000`) and `resources/read` (default `5000`).
+- `MCP_ALLOWED_HOSTS`: (Optional) Comma-separated Host allow-list for DNS-rebinding protection. Default `*` (protection off — typical behind nginx).
+- `MCP_REQUEST_STATE_KEY`: (Optional) Shared HMAC key so MRTR `requestState` verifies across instances. Unset = process-local.
 
 ## Verified Clients & Live Results (2026-06-12)
 
