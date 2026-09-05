@@ -8,8 +8,14 @@ The proxy is a dual-stack server:
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import re
+from collections import deque
 from typing import Any, Mapping, Optional, Tuple
+
+logger = logging.getLogger("mcp_openapi_proxy")
 
 PACKAGE_VERSION = "0.4.0"
 SERVER_VERSION = PACKAGE_VERSION
@@ -23,6 +29,11 @@ HEADER_PROTOCOL_VERSION = "MCP-Protocol-Version"
 HEADER_METHOD = "Mcp-Method"
 HEADER_NAME = "Mcp-Name"
 HEADER_SESSION_ID = "Mcp-Session-Id"
+
+# JSON-RPC method / tools/call name only. Reject anything that could smuggle
+# tokens or extra fields into the one-line INFO log.
+_RPC_TOKEN_RE = re.compile(r"^[A-Za-z0-9_./:-]{1,128}$")
+_RPC_NAME_METHODS = frozenset({"tools/call"})
 
 
 def truthy(name: str, default: bool = False) -> bool:
@@ -143,6 +154,124 @@ def healthz_route():
     from starlette.routing import Route
 
     return Route(HEALTHZ_PATH, endpoint=healthz_endpoint, methods=["GET"])
+
+
+def _safe_rpc_token(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    token = value.strip()
+    if not token or not _RPC_TOKEN_RE.fullmatch(token):
+        return None
+    return token
+
+
+def inbound_rpc_identity(
+    payload: Any = None,
+    headers: Optional[Mapping[str, str]] = None,
+) -> Tuple[Optional[str], Optional[str]]:
+    """JSON-RPC method and tools/call name only. Never reads arguments/bodies."""
+    method: Optional[str] = None
+    name: Optional[str] = None
+    if isinstance(payload, dict):
+        method = _safe_rpc_token(payload.get("method"))
+        params = payload.get("params")
+        if isinstance(params, dict):
+            name = _safe_rpc_token(params.get("name"))
+    if headers:
+        folded = {str(key).lower(): headers[key] for key in headers}
+        if method is None:
+            method = _safe_rpc_token(folded.get("mcp-method"))
+        if name is None:
+            name = _safe_rpc_token(folded.get("mcp-name"))
+    return method, name
+
+
+def format_rpc_log_line(method: Optional[str], name: Optional[str] = None) -> Optional[str]:
+    """One INFO line: ``mcp rpc method=tools/list`` or ``... method=tools/call name=...``."""
+    method = _safe_rpc_token(method)
+    if not method:
+        return None
+    if method in _RPC_NAME_METHODS:
+        name = _safe_rpc_token(name)
+        if name:
+            return f"mcp rpc method={method} name={name}"
+    return f"mcp rpc method={method}"
+
+
+def log_inbound_rpc(method: Optional[str], name: Optional[str] = None) -> Optional[str]:
+    line = format_rpc_log_line(method, name)
+    if line:
+        logger.info(line)
+    return line
+
+
+class McpRpcLogMiddleware:
+    """Raw ASGI wrapper: log inbound JSON-RPC method before StreamableHTTPSessionManager.
+
+    Not BaseHTTPMiddleware — that class can interfere with Streamable HTTP
+    streaming. Only POST bodies are peeked; Authorization and ``arguments``
+    are never logged.
+    """
+
+    def __init__(self, app: Any):
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope.get("type") != "http" or scope.get("method") != "POST":
+            await self.app(scope, receive, send)
+            return
+        body, replay = await _buffer_http_body(receive)
+        method, name = inbound_rpc_identity(_try_json_rpc(body), _asgi_header_map(scope))
+        log_inbound_rpc(method, name)
+        await self.app(scope, replay, send)
+
+
+def _asgi_header_map(scope: Mapping[str, Any]) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for raw_key, raw_value in scope.get("headers") or ():
+        try:
+            key = raw_key.decode("latin-1").lower()
+            value = raw_value.decode("latin-1")
+        except (AttributeError, UnicodeDecodeError):
+            continue
+        if key == "authorization":
+            continue
+        headers[key] = value
+    return headers
+
+
+def _try_json_rpc(body: bytes) -> Any:
+    if not body:
+        return None
+    try:
+        return json.loads(body)
+    except (ValueError, RecursionError, UnicodeDecodeError):
+        return None
+
+
+async def _buffer_http_body(receive: Any) -> Tuple[bytes, Any]:
+    """Read the POST body once and replay it to StreamableHTTPSessionManager."""
+    chunks = bytearray()
+    trailing = None
+    while True:
+        message = await receive()
+        if message["type"] != "http.request":
+            trailing = message
+            break
+        chunks.extend(message.get("body") or b"")
+        if not message.get("more_body", False):
+            break
+    cached: deque = deque()
+    cached.append({"type": "http.request", "body": bytes(chunks), "more_body": False})
+    if trailing is not None:
+        cached.append(trailing)
+
+    async def replay() -> Any:
+        if cached:
+            return cached.popleft()
+        return await receive()
+
+    return bytes(chunks), replay
 
 
 def list_ttl_ms() -> int:
