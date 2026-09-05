@@ -52,6 +52,7 @@ for 2026-era clients.
 | `MCP_HOST` | `127.0.0.1` | HTTP bind address |
 | `MCP_PORT` | `8000` | HTTP bind port |
 | `MCP_PATH` | `/mcp` | Streamable HTTP path |
+| `GET /healthz` | — | Process-local health JSON on native Streamable HTTP only (`{"ok":true,"name","port"}`). Does not take the MCP request lock. |
 | `MCP_JSON_RESPONSE` | `true` | JSON responses instead of SSE |
 | `MCP_LIST_TTL_MS` | `60000` | `ttlMs` for list results |
 | `MCP_READ_TTL_MS` | `5000` | `ttlMs` for `resources/read` |
@@ -131,3 +132,4 @@ legacy HTTP clients, and a 0.4.0 native listener for 2026-era clients.
 | retries / duplicate ids | `tests/unit/test_mcp2_protocol.py::test_http_duplicate_request_ids_are_independent` |
 | mixed-version (legacy initialize) | `tests/unit/test_mcp2_protocol.py::test_legacy_initialize_still_works` |
 | round-robin, two processes | `tests/integration/test_mcp2_http_roundrobin.py` |
+| GET /healthz body, no spec/lock | `tests/unit/test_healthz.py` |

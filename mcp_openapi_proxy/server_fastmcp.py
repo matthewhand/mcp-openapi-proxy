@@ -20,11 +20,13 @@ from mcp_openapi_proxy.logging_setup import logger
 from mcp_openapi_proxy.openapi import fetch_openapi_spec, build_base_url, handle_auth
 from mcp_openapi_proxy.utils import is_tool_whitelisted, normalize_tool_name, strip_parameters, get_additional_headers, deduplicate_tool_name
 from mcp_openapi_proxy.protocol import (
+    HEALTHZ_PATH,
     PACKAGE_VERSION,
     advertised_server_description,
     advertised_server_name,
     advertised_server_title,
     cache_hints,
+    healthz_endpoint,
     json_response,
     mcp_host,
     mcp_path,
@@ -48,6 +50,8 @@ mcp = MCPServer(
     cache_hints=cache_hints(),
     request_state_security=request_state_security(),
 )
+# Sibling Starlette route: process-local /healthz, no MCP lock (issue #66).
+mcp.custom_route(HEALTHZ_PATH, methods=["GET"])(healthz_endpoint)
 
 spec = None  # Global spec for resources
 

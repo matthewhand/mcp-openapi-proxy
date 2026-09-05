@@ -143,7 +143,7 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `MCP_SERVER_NAME`: (Optional) Identity advertised in `serverInfo` / `server/discover`. Set this to the proxied API (e.g. `gpt-terminal-plus`, `flyio`) so multiple instances are not all called `openapi-proxy`. Falls back to the OpenAPI file stem or spec-URL host, then `openapi-proxy`.
 - `MCP_SERVER_TITLE` / `MCP_SERVER_DESCRIPTION`: (Optional) Display title and description alongside the name.
 - `MCP_TRANSPORT`: (Optional) `stdio` (default) or `streamable-http` for native stateless Streamable HTTP (MCP 2026-07-28; no `Mcp-Session-Id`).
-- `MCP_HOST` / `MCP_PORT` / `MCP_PATH`: (Optional) HTTP bind address (`127.0.0.1`), port (`8000`), and path (`/mcp`) when `MCP_TRANSPORT=streamable-http`.
+- `MCP_HOST` / `MCP_PORT` / `MCP_PATH`: (Optional) HTTP bind address (`127.0.0.1`), port (`8000`), and path (`/mcp`) when `MCP_TRANSPORT=streamable-http`. Native Streamable HTTP also serves `GET /healthz` → `{"ok":true,"name":<MCP_SERVER_NAME or fallback>,"port":<MCP_PORT>}` without taking the MCP request lock (no spec fetch, no `initialize`).
 - `MCP_JSON_RESPONSE`: (Optional) `true` (default) returns JSON instead of SSE on Streamable HTTP.
 - `MCP_LIST_TTL_MS` / `MCP_READ_TTL_MS`: (Optional) `ttlMs` for list results (default `60000`) and `resources/read` (default `5000`).
 - `MCP_ALLOWED_HOSTS`: (Optional) Comma-separated Host allow-list for DNS-rebinding protection. Default `*` (protection off — typical behind nginx).
