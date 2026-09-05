@@ -26,6 +26,11 @@
   `OpenApiProxy-LowLevel` on every instance.
 - Tests for handshake-free list/call, duplicate request ids, mixed-version
   clients, and multi-instance round-robin without sticky routing.
+- `GET /healthz` on native Streamable HTTP (`MCP_TRANSPORT=streamable-http`):
+  process-local `{"ok":true,"name":…,"port":…}` with no spec fetch, no
+  `initialize`, and no MCP request lock (so nested curls of the same
+  instance do not deadlock the single worker). Stdio and the 0.3.4 /
+  supergateway path are unchanged.
 
 ### Breaking
 - Requires `mcp` 2.x. `uvx mcp-openapi-proxy` without a `<2` pin now

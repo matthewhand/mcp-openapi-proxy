@@ -119,6 +119,32 @@ def mcp_path() -> str:
     return path
 
 
+HEALTHZ_PATH = "/healthz"
+
+
+def healthz_body() -> dict:
+    """Process-local health payload. Env only — no spec fetch, no MCP I/O."""
+    return {
+        "ok": True,
+        "name": advertised_server_name(),
+        "port": mcp_port(),
+    }
+
+
+async def healthz_endpoint(request: Any):
+    """Starlette handler for GET /healthz. Does not enter the MCP request lock."""
+    from starlette.responses import JSONResponse
+
+    return JSONResponse(healthz_body())
+
+
+def healthz_route():
+    """Sibling Starlette Route — not mounted under StreamableHTTPSessionManager."""
+    from starlette.routing import Route
+
+    return Route(HEALTHZ_PATH, endpoint=healthz_endpoint, methods=["GET"])
+
+
 def list_ttl_ms() -> int:
     return env_int("MCP_LIST_TTL_MS", DEFAULT_LIST_TTL_MS)
 

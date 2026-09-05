@@ -36,6 +36,7 @@ from mcp_openapi_proxy.protocol import (
     advertised_server_name,
     advertised_server_title,
     cache_hints,
+    healthz_route,
     json_response,
     mcp_host,
     mcp_path,
@@ -547,6 +548,22 @@ async def start_server():
     prewarm.cancel()
 
 
+def build_streamable_http_app(*, host: Optional[str] = None, path: Optional[str] = None):
+    """Starlette app for native Streamable HTTP plus process-local GET /healthz.
+
+    /healthz is a sibling custom_starlette_route so it never enters
+    StreamableHTTPSessionManager or the MCP request lock.
+    """
+    return mcp.streamable_http_app(
+        streamable_http_path=path or mcp_path(),
+        json_response=json_response(),
+        stateless_http=True,
+        transport_security=transport_security(),
+        host=host or mcp_host(),
+        custom_starlette_routes=[healthz_route()],
+    )
+
+
 def _run_streamable_http() -> None:
     """Stateless Streamable HTTP: no Mcp-Session-Id, no sticky routing."""
     import uvicorn
@@ -558,13 +575,7 @@ def _run_streamable_http() -> None:
         "Starting Low-Level MCP server (streamable-http, stateless) "
         f"on {host}:{port}{path}"
     )
-    app = mcp.streamable_http_app(
-        streamable_http_path=path,
-        json_response=json_response(),
-        stateless_http=True,
-        transport_security=transport_security(),
-        host=host,
-    )
+    app = build_streamable_http_app(host=host, path=path)
     uvicorn.run(app, host=host, port=port)
 
 
