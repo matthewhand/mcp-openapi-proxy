@@ -32,6 +32,7 @@ from mcp_openapi_proxy.utils import (
 )
 from mcp_openapi_proxy.protocol import (
     PACKAGE_VERSION,
+    McpRpcLogMiddleware,
     advertised_server_description,
     advertised_server_name,
     advertised_server_title,
@@ -553,8 +554,12 @@ def build_streamable_http_app(*, host: Optional[str] = None, path: Optional[str]
 
     /healthz is a sibling custom_starlette_route so it never enters
     StreamableHTTPSessionManager or the MCP request lock.
+
+    Raw ASGI middleware logs one INFO line per inbound JSON-RPC method
+    (plus tools/call name) before StreamableHTTPSessionManager. Stdio is
+    unchanged.
     """
-    return mcp.streamable_http_app(
+    app = mcp.streamable_http_app(
         streamable_http_path=path or mcp_path(),
         json_response=json_response(),
         stateless_http=True,
@@ -562,6 +567,8 @@ def build_streamable_http_app(*, host: Optional[str] = None, path: Optional[str]
         host=host or mcp_host(),
         custom_starlette_routes=[healthz_route()],
     )
+    app.add_middleware(McpRpcLogMiddleware)
+    return app
 
 
 def _run_streamable_http() -> None:

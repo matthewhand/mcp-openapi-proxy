@@ -31,6 +31,10 @@
   `initialize`, and no MCP request lock (so nested curls of the same
   instance do not deadlock the single worker). Stdio and the 0.3.4 /
   supergateway path are unchanged.
+- Native Streamable HTTP logs one INFO line per inbound JSON-RPC request
+  (`mcp rpc method=tools/list` or `mcp rpc method=tools/call name=…`) so
+  uvicorn `POST /mcp 200` can be attributed. Arguments, Authorization,
+  tokens, and request bodies are not logged. Stdio is unchanged.
 
 ### Breaking
 - Requires `mcp` 2.x. `uvx mcp-openapi-proxy` without a `<2` pin now

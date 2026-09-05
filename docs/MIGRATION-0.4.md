@@ -53,6 +53,7 @@ for 2026-era clients.
 | `MCP_PORT` | `8000` | HTTP bind port |
 | `MCP_PATH` | `/mcp` | Streamable HTTP path |
 | `GET /healthz` | — | Process-local health JSON on native Streamable HTTP only (`{"ok":true,"name","port"}`). Does not take the MCP request lock. |
+| Streamable HTTP INFO log | — | One line per inbound JSON-RPC POST: `mcp rpc method=tools/list` or `mcp rpc method=tools/call name=…`. No args/Authorization/bodies. |
 | `MCP_JSON_RESPONSE` | `true` | JSON responses instead of SSE |
 | `MCP_LIST_TTL_MS` | `60000` | `ttlMs` for list results |
 | `MCP_READ_TTL_MS` | `5000` | `ttlMs` for `resources/read` |
@@ -133,3 +134,6 @@ legacy HTTP clients, and a 0.4.0 native listener for 2026-era clients.
 | mixed-version (legacy initialize) | `tests/unit/test_mcp2_protocol.py::test_legacy_initialize_still_works` |
 | round-robin, two processes | `tests/integration/test_mcp2_http_roundrobin.py` |
 | GET /healthz body, no spec/lock | `tests/unit/test_healthz.py` |
+| INFO `mcp rpc method=` (no args/secrets) | `tests/unit/test_rpc_logging.py` |
+
+To verify on a live instance: `grep 'mcp rpc method='` in the process stderr (or `servers.log`). `tools/list` logs `mcp rpc method=tools/list`; `tools/call` logs `mcp rpc method=tools/call name=<tool>`. Arguments and `Authorization` must not appear.

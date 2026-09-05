@@ -128,7 +128,7 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `API_KEY`: (Optional) Authentication token for the API sent as `Bearer <API_KEY>` in the Authorization header by default.
 - `API_AUTH_TYPE`: (Optional) Overrides the default `Bearer` Authorization scheme. `api-key` sends the key in the header named by `API_AUTH_HEADER`; any other value is used as a custom scheme prefix (e.g. `Token` for NetBox → `Authorization: Token <key>`).
 - `STRIP_PARAM`: (Optional) JMESPath expression to strip unwanted parameters (e.g. `token` for Slack).
-- `DEBUG`: (Optional) Enables verbose debug logging when set to "true", "1", or "yes".
+- `DEBUG`: (Optional) Enables verbose debug logging when set to "true", "1", or "yes". Native Streamable HTTP also emits one INFO line per inbound JSON-RPC method (`mcp rpc method=tools/list`, `mcp rpc method=tools/call name=…`) without arguments or Authorization.
 - `EXTRA_HEADERS`: (Optional) One or more outgoing HTTP headers. Accepts a **JSON array** (`["X-A: 1","X-B: 2"]`), one `Header: Value` per **line**, or literal `\n`-separated entries (for configs that cannot embed newlines).
 - `SERVER_URL_OVERRIDE`: (Optional) Overrides the base URL from the OpenAPI specification when set, useful for custom deployments.
 - `TOOL_NAME_MAX_LENGTH`: (Optional) Truncates tool names to a max length.
@@ -1013,7 +1013,7 @@ Then paste these follow-up messages:
 - **Invalid Specification:** Verify the OpenAPI document is standard-compliant.
 - **Tool Filtering Issues:** Check `TOOL_WHITELIST` matches desired endpoints.
 - **Authentication Errors:** Confirm `API_KEY` and `API_AUTH_TYPE` are correct.
-- **Logging:** Set `DEBUG=true` for detailed output to stderr.
+- **Logging:** Set `DEBUG=true` for detailed output to stderr. On native Streamable HTTP (`MCP_TRANSPORT=streamable-http`), INFO always includes `mcp rpc method=…` (and `name=` for `tools/call`) so `POST /mcp 200` can be attributed without enabling DEBUG.
 - **Test Server:** Run directly:
 
 ```bash
