@@ -37,7 +37,7 @@ def _identifier_tokens(text: str) -> List[str]:
         return []
     spaced = re.sub(r"(?<=[a-z0-9])([A-Z])", r" \1", text)
     spaced = spaced.replace("_", " ").replace("-", " ")
-    return [part.lower() for part in re.findall(r"[a-z0-9]+", spaced)]
+    return [part.lower() for part in re.findall(r"[A-Za-z0-9]+", spaced)]
 
 
 def human_tool_title(tool_name: str, operation: Optional[Dict] = None) -> str:
