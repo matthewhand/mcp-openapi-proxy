@@ -2,6 +2,8 @@
 
 **mcp-openapi-proxy** is a Python package that implements a Model Context Protocol (MCP) server, designed to dynamically expose REST APIs—defined by OpenAPI specifications—as MCP tools. This facilitates seamless integration of OpenAPI-described APIs into MCP-based workflows.
 
+**2026-09-05 — 0.4.0:** MCP 2.x / 2026-07-28 native Streamable HTTP (stateless POST /mcp, dual-stack with legacy stdio).
+
 ## What's New in 0.4.0
 
 **MCP 2026-07-28 (SDK 2.x).** The proxy is dual-stack: modern clients send
