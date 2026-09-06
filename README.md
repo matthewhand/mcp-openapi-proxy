@@ -2,6 +2,20 @@
 
 **mcp-openapi-proxy** is a Python package that implements a Model Context Protocol (MCP) server, designed to dynamically expose REST APIs—defined by OpenAPI specifications—as MCP tools. This facilitates seamless integration of OpenAPI-described APIs into MCP-based workflows.
 
+**2026-09-05 — 0.4.0:** MCP 2.x / 2026-07-28 native Streamable HTTP (stateless POST /mcp, dual-stack with legacy stdio).
+
+## What's New in 0.4.0
+
+**MCP 2026-07-28 (SDK 2.x).** The proxy is dual-stack: modern clients send
+self-contained requests (no `initialize`, no `Mcp-Session-Id`) and list results
+carry `ttlMs` / `cacheScope`. Legacy stdio clients that still handshake keep
+working. Native Streamable HTTP is available with `MCP_TRANSPORT=streamable-http`
+and is stateless — round-robin load balancing needs no sticky sessions.
+
+See [docs/MIGRATION-0.4.md](docs/MIGRATION-0.4.md) for breaking changes, new
+env vars, and gateway cutover notes. **0.3.4** remains the last release on
+mcp 1.x (`mcp>=1.2.0,<2`).
+
 ## What's New in 0.2.0
 
 **Works with every modern MCP-enabled client we tested.** Strict MCP clients can now discover and call tools — the low-level server advertises correct capabilities and no longer crashes during resource/prompt discovery, and a slow spec download no longer crash-loops short-timeout clients. Verified live against the full list of mainstream agent CLIs:
@@ -56,6 +70,7 @@ The package offers two operational modes:
 ## Features
 
 - **Dynamic Tool Generation:** Automatically creates MCP tools from OpenAPI endpoint definitions.
+- **Tool Annotations:** Every OpenAPI-derived tool includes MCP `annotations` (`title`, plus `readOnlyHint` / `idempotentHint` for GET and clearly read-ish POST, or `destructiveHint` for other methods) so clients such as Gemini Spark see the same fingerprint as Notion/Linear.
 - **Simple Mode Option:** Offers a static configuration alternative via FastMCP mode.
 - **OpenAPI Specification Support:** Compatible with OpenAPI v3 with potential support for v2.
 - **Flexible Filtering:** Allows endpoint filtering through whitelisting by paths or other criteria.
@@ -116,7 +131,7 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `API_KEY`: (Optional) Authentication token for the API sent as `Bearer <API_KEY>` in the Authorization header by default.
 - `API_AUTH_TYPE`: (Optional) Overrides the default `Bearer` Authorization scheme. `api-key` sends the key in the header named by `API_AUTH_HEADER`; any other value is used as a custom scheme prefix (e.g. `Token` for NetBox → `Authorization: Token <key>`).
 - `STRIP_PARAM`: (Optional) JMESPath expression to strip unwanted parameters (e.g. `token` for Slack).
-- `DEBUG`: (Optional) Enables verbose debug logging when set to "true", "1", or "yes".
+- `DEBUG`: (Optional) Enables verbose debug logging when set to "true", "1", or "yes". Native Streamable HTTP also emits one INFO line per inbound JSON-RPC method (`mcp rpc method=tools/list`, `mcp rpc method=tools/call name=…`) without arguments or Authorization.
 - `EXTRA_HEADERS`: (Optional) One or more outgoing HTTP headers. Accepts a **JSON array** (`["X-A: 1","X-B: 2"]`), one `Header: Value` per **line**, or literal `\n`-separated entries (for configs that cannot embed newlines).
 - `SERVER_URL_OVERRIDE`: (Optional) Overrides the base URL from the OpenAPI specification when set, useful for custom deployments.
 - `TOOL_NAME_MAX_LENGTH`: (Optional) Truncates tool names to a max length.
@@ -128,6 +143,14 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `OPENAPI_SPEC_CACHE_TTL_SECONDS`: (Optional) Live-first disk cache for remote specs: the cached copy is served only when the live fetch fails or stalls (and respawned servers fail fast to it). Default `86400`; set `0` to disable.
 - `ENABLE_TOOLS` / `ENABLE_PROMPTS` / `ENABLE_RESOURCES`: (Optional) Feature gates for the three MCP surfaces in low-level mode; each defaults to enabled. Disabling a feature removes its handlers and its capability advertisement.
 - `CAPABILITIES_TOOLS` / `CAPABILITIES_PROMPTS` / `CAPABILITIES_RESOURCES`: (Optional) Advertise `listChanged` on the corresponding capability (for clients that key on it). Default `false`.
+- `MCP_SERVER_NAME`: (Optional) Identity advertised in `serverInfo` / `server/discover`. Set this to the proxied API (e.g. `gpt-terminal-plus`, `flyio`) so multiple instances are not all called `openapi-proxy`. Falls back to the OpenAPI file stem or spec-URL host, then `openapi-proxy`.
+- `MCP_SERVER_TITLE` / `MCP_SERVER_DESCRIPTION`: (Optional) Display title and description alongside the name.
+- `MCP_TRANSPORT`: (Optional) `stdio` (default) or `streamable-http` for native stateless Streamable HTTP (MCP 2026-07-28; no `Mcp-Session-Id`).
+- `MCP_HOST` / `MCP_PORT` / `MCP_PATH`: (Optional) HTTP bind address (`127.0.0.1`), port (`8000`), and path (`/mcp`) when `MCP_TRANSPORT=streamable-http`. Native Streamable HTTP also serves `GET /healthz` → `{"ok":true,"name":<MCP_SERVER_NAME or fallback>,"port":<MCP_PORT>}` without taking the MCP request lock (no spec fetch, no `initialize`).
+- `MCP_JSON_RESPONSE`: (Optional) `true` (default) returns JSON instead of SSE on Streamable HTTP.
+- `MCP_LIST_TTL_MS` / `MCP_READ_TTL_MS`: (Optional) `ttlMs` for list results (default `60000`) and `resources/read` (default `5000`).
+- `MCP_ALLOWED_HOSTS`: (Optional) Comma-separated Host allow-list for DNS-rebinding protection. Default `*` (protection off — typical behind nginx).
+- `MCP_REQUEST_STATE_KEY`: (Optional) Shared HMAC key so MRTR `requestState` verifies across instances. Unset = process-local.
 
 ## Verified Clients & Live Results (2026-06-12)
 
@@ -993,7 +1016,7 @@ Then paste these follow-up messages:
 - **Invalid Specification:** Verify the OpenAPI document is standard-compliant.
 - **Tool Filtering Issues:** Check `TOOL_WHITELIST` matches desired endpoints.
 - **Authentication Errors:** Confirm `API_KEY` and `API_AUTH_TYPE` are correct.
-- **Logging:** Set `DEBUG=true` for detailed output to stderr.
+- **Logging:** Set `DEBUG=true` for detailed output to stderr. On native Streamable HTTP (`MCP_TRANSPORT=streamable-http`), INFO always includes `mcp rpc method=…` (and `name=` for `tools/call`) so `POST /mcp 200` can be attributed without enabling DEBUG.
 - **Test Server:** Run directly:
 
 ```bash

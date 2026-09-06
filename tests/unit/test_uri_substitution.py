@@ -84,8 +84,8 @@ def test_lowlevel_uri_substitution(mock_env):
     register_functions(DUMMY_SPEC)
     assert len(lowlevel.tools) == 1, "Expected one tool"
     tool = lowlevel.tools[0]
-    assert "user_id" in tool.inputSchema["properties"], "user_id not in inputSchema"
-    assert "user_id" in tool.inputSchema["required"], "user_id not required"
+    assert "user_id" in tool.input_schema["properties"], "user_id not in inputSchema"
+    assert "user_id" in tool.input_schema["required"], "user_id not required"
     assert tool.name == "get_users_by_user_id_tasks", "Tool name mismatch" # Updated expected tool name
 
 # def test_lowlevel_dispatcher_substitution(mock_env, mock_requests):

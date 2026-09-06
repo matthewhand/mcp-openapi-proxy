@@ -6,13 +6,11 @@ import os
 import json
 from typing import Any, Dict, List, Union
 from types import SimpleNamespace
-from pydantic import AnyUrl
 
 import requests
 from mcp import types
-from mcp.server.models import InitializationOptions
-from mcp.server.stdio import stdio_server
 from mcp_openapi_proxy.logging_setup import logger
+from mcp_openapi_proxy.protocol import unpack_handler_args
 from mcp_openapi_proxy.utils import (
     normalize_tool_name,
     is_tool_whitelisted,
@@ -35,13 +33,14 @@ prompts: List[types.Prompt] = []
 openapi_spec_data = None
 
 
-async def dispatcher_handler(request: types.CallToolRequest) -> Any:
+async def dispatcher_handler(ctx_or_request: Any, params: Any = None) -> Any:
     """
     Dispatcher handler that routes CallToolRequest to the appropriate function (tool).
     """
     global openapi_spec_data
+    _, params = unpack_handler_args(ctx_or_request, params)
     try:
-        function_name = request.params.name
+        function_name = params.name
         logger.debug(f"Dispatcher received CallToolRequest for function: {function_name}")
         api_key = os.getenv("API_KEY")
         logger.debug(f"API_KEY: {api_key[:5] + '...' if api_key else '<not set>'}")
@@ -51,16 +50,16 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
             logger.error(f"Unknown function requested: {function_name}")
             result = types.CallToolResult(
                 content=[types.TextContent(type="text", text="Unknown function requested")],
-                isError=False,
+                is_error=False,
             )
             return result
-        arguments = request.params.arguments or {}
+        arguments = params.arguments or {}
         logger.debug(f"Raw arguments before processing: {arguments}")
 
         if openapi_spec_data is None:
             result = types.CallToolResult(
                 content=[types.TextContent(type="text", text="OpenAPI spec not loaded")],
-                isError=True,
+                is_error=True,
             )
             return result
         operation_details = lookup_operation_details(function_name, openapi_spec_data)
@@ -68,7 +67,7 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
             logger.error(f"Could not find OpenAPI operation for function: {function_name}")
             result = types.CallToolResult(
                 content=[types.TextContent(type="text", text=f"Could not find OpenAPI operation for function: {function_name}")],
-                isError=False,
+                is_error=False,
             )
             return result
 
@@ -98,7 +97,7 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
             logger.error(f"Missing parameter for substitution: {e}")
             result = types.CallToolResult(
                 content=[types.TextContent(type="text", text=f"Missing parameter: {e}")],
-                isError=False,
+                is_error=False,
             )
             return result
 
@@ -107,7 +106,7 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
             logger.critical("Failed to construct base URL from spec or SERVER_URL_OVERRIDE.")
             result = types.CallToolResult(
                 content=[types.TextContent(type="text", text="No base URL defined in spec or SERVER_URL_OVERRIDE")],
-                isError=False,
+                is_error=False,
             )
             return result
 
@@ -132,7 +131,7 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
                     logger.error(f"Missing required path parameters: {missing_required}")
                     result = types.CallToolResult(
                         content=[types.TextContent(type="text", text=f"Missing required path parameters: {missing_required}")],
-                        isError=False,
+                        is_error=False,
                     )
                     return result
             if method == "GET":
@@ -163,29 +162,29 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
             response_text = (response.text or "No response body").strip()
             content, log_message = detect_response_type(response_text)
             logger.debug(log_message)
-            final_content = [content.dict()]
+            final_content = [content]
         except requests.exceptions.RequestException as e:
             logger.error(f"API request failed: {e}")
             result = types.CallToolResult(
                 content=[types.TextContent(type="text", text=str(e))],
-                isError=False,
+                is_error=False,
             )
             return result
 
         logger.debug(f"Response content type: {content.type}")
         logger.debug(f"Response sent to client: {content.text}")
-        result = types.CallToolResult(content=final_content, isError=False)  # type: ignore
+        result = types.CallToolResult(content=final_content, is_error=False)
         return result
     except Exception as e:
         logger.error(f"Unhandled exception in dispatcher_handler: {e}", exc_info=True)
         result = types.CallToolResult(
             content=[types.TextContent(type="text", text=f"Internal error: {str(e)}")],
-            isError=False,
+            is_error=False,
         )
         return result
 
 
-async def list_tools(request: types.ListToolsRequest) -> Any:
+async def list_tools(ctx_or_request: Any = None, params: Any = None) -> Any:
     """Return a list of registered tools."""
     logger.debug("Handling list_tools request - start")
     logger.debug(f"Tools list length: {len(tools)}")
@@ -193,7 +192,7 @@ async def list_tools(request: types.ListToolsRequest) -> Any:
     return result
 
 
-async def list_resources(request: types.ListResourcesRequest) -> Any:
+async def list_resources(ctx_or_request: Any = None, params: Any = None) -> Any:
     """Return a list of registered resources."""
     logger.debug("Handling list_resources request")
     if not resources:
@@ -202,7 +201,7 @@ async def list_resources(request: types.ListResourcesRequest) -> Any:
         resources.append(
             types.Resource(
                 name="spec_file",
-                uri=AnyUrl("file:///openapi_spec.json"),
+                uri="file:///openapi_spec.json",
                 description="The raw OpenAPI specification JSON",
             )
         )
@@ -211,9 +210,11 @@ async def list_resources(request: types.ListResourcesRequest) -> Any:
     return result
 
 
-async def read_resource(request: types.ReadResourceRequest) -> Any:
+async def read_resource(ctx_or_request: Any, params: Any = None) -> Any:
     """Read a specific resource identified by its URI."""
-    logger.debug(f"START read_resource for URI: {request.params.uri}")
+    _, params = unpack_handler_args(ctx_or_request, params)
+    uri_str = str(params.uri)
+    logger.debug(f"START read_resource for URI: {uri_str}")
     try:
         global openapi_spec_data
         spec_data = openapi_spec_data
@@ -227,7 +228,7 @@ async def read_resource(request: types.ReadResourceRequest) -> Any:
                     contents=[
                         types.TextResourceContents(
                             text="Spec unavailable: OPENAPI_SPEC_URL not set and no spec data loaded",
-                            uri=AnyUrl(str(request.params.uri)),
+                            uri=uri_str,
                         )
                     ]
                 )
@@ -244,7 +245,7 @@ async def read_resource(request: types.ReadResourceRequest) -> Any:
                 contents=[
                     types.TextResourceContents(
                         text="Spec data unavailable after fetch attempt",
-                        uri=AnyUrl(str(request.params.uri)),
+                        uri=uri_str,
                     )
                 ]
             )
@@ -256,8 +257,8 @@ async def read_resource(request: types.ReadResourceRequest) -> Any:
             contents=[
                 types.TextResourceContents(
                     text=spec_json,
-                    uri=AnyUrl("file:///openapi_spec.json"),
-                    mimeType="application/json"
+                    uri="file:///openapi_spec.json",
+                    mime_type="application/json"
                 )
             ]
         )
@@ -268,14 +269,14 @@ async def read_resource(request: types.ReadResourceRequest) -> Any:
         result = types.ReadResourceResult(
             contents=[
                 types.TextResourceContents(
-                    text=f"Resource error: {str(e)}", uri=request.params.uri
+                    text=f"Resource error: {str(e)}", uri=uri_str
                 )
             ]
         )
         return result
 
 
-async def list_prompts(request: types.ListPromptsRequest) -> Any:
+async def list_prompts(ctx_or_request: Any = None, params: Any = None) -> Any:
     """Return a list of registered prompts."""
     logger.debug("Handling list_prompts request")
     logger.debug(f"Prompts list length: {len(prompts)}")
@@ -283,12 +284,14 @@ async def list_prompts(request: types.ListPromptsRequest) -> Any:
     return result
 
 
-async def get_prompt(request: types.GetPromptRequest) -> Any:
+async def get_prompt(ctx_or_request: Any, params: Any = None) -> Any:
     """Return a specific prompt by name."""
-    logger.debug(f"Handling get_prompt request for {request.params.name}")
-    prompt = next((p for p in prompts if p.name == request.params.name), None)
+    _, params = unpack_handler_args(ctx_or_request, params)
+    name = params.name
+    logger.debug(f"Handling get_prompt request for {name}")
+    prompt = next((p for p in prompts if p.name == name), None)
     if not prompt:
-        logger.error(f"Prompt '{request.params.name}' not found")
+        logger.error(f"Prompt '{name}' not found")
         result = types.GetPromptResult(
             messages=[
                 types.PromptMessage(

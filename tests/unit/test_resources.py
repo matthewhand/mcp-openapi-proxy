@@ -32,18 +32,20 @@ def to_dict(obj):
     return obj
 
 def test_lowlevel_list_resources(mock_env):
-    # Patch the types in server_lowlevel to use our patched types.
     import mcp_openapi_proxy.server_lowlevel as sl
+    original_types = sl.types
     sl.types = t
-    request = SimpleNamespace(params=SimpleNamespace())
-    result = asyncio.run(list_resources(request))
-    res = to_dict(result)
-    assert len(res["resources"]) == 1, "Expected one resource"
-    # Convert the resource object to dict if needed.
-    resource = res["resources"][0]
-    if not isinstance(resource, dict):
-        resource = vars(resource)
-    assert resource["name"] == "spec_file", "Expected spec_file resource"
+    try:
+        request = SimpleNamespace(params=SimpleNamespace())
+        result = asyncio.run(list_resources(request))
+        res = to_dict(result)
+        assert len(res["resources"]) == 1, "Expected one resource"
+        resource = res["resources"][0]
+        if not isinstance(resource, dict):
+            resource = vars(resource)
+        assert resource["name"] == "spec_file", "Expected spec_file resource"
+    finally:
+        sl.types = original_types
 
 # def test_lowlevel_read_resource_valid(mock_env):
 #     import mcp_openapi_proxy.server_lowlevel as sl

@@ -1,53 +1,64 @@
-from pydantic import BaseModel, AnyUrl
+from pydantic import BaseModel
 from typing import List, Optional
+
 
 class TextContent(BaseModel):
     type: str
     text: str
     uri: Optional[str] = None
 
-# Define resource contents as a direct subtype.
-# Removed 'type' field to satisfy Pylance, though ValidationError suggests it's needed.
+
 class TextResourceContents(BaseModel):
     text: str
-    uri: AnyUrl # Expects AnyUrl, not str
+    uri: str
+    mime_type: Optional[str] = None
+
 
 class CallToolResult(BaseModel):
-    content: List[TextContent] # Expects TextContent, not TextResourceContents directly
-    isError: bool = False
+    content: List[TextContent]
+    is_error: bool = False
+
 
 class ServerResult(BaseModel):
     root: CallToolResult
 
+
 class Tool(BaseModel):
     name: str
     description: str
-    inputSchema: dict
+    input_schema: dict
+
 
 class Prompt(BaseModel):
     name: str
     description: str
     arguments: List = []
 
-# PromptMessage represents one message in a prompt conversation.
+
 class PromptMessage(BaseModel):
     role: str
     content: TextContent
 
+
 class GetPromptResult(BaseModel):
     messages: List[PromptMessage]
+
 
 class ListPromptsResult(BaseModel):
     prompts: List[Prompt]
 
+
 class ToolsCapability(BaseModel):
-    listChanged: bool
+    list_changed: bool
+
 
 class PromptsCapability(BaseModel):
-    listChanged: bool
+    list_changed: bool
+
 
 class ResourcesCapability(BaseModel):
-    listChanged: bool
+    list_changed: bool
+
 
 class ServerCapabilities(BaseModel):
     tools: Optional[ToolsCapability] = None

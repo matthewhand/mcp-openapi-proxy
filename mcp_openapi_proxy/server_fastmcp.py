@@ -15,11 +15,32 @@ import os
 import json
 import requests
 from typing import Dict, Any, Optional
-from mcp import types
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp_openapi_proxy.logging_setup import logger
-from mcp_openapi_proxy.openapi import fetch_openapi_spec, build_base_url, handle_auth
+from mcp import types as mcp_types
+from mcp_openapi_proxy.openapi import (
+    annotations_wire_dict,
+    fetch_openapi_spec,
+    build_base_url,
+    handle_auth,
+)
 from mcp_openapi_proxy.utils import is_tool_whitelisted, normalize_tool_name, strip_parameters, get_additional_headers, deduplicate_tool_name
+from mcp_openapi_proxy.protocol import (
+    HEALTHZ_PATH,
+    PACKAGE_VERSION,
+    advertised_server_description,
+    advertised_server_name,
+    advertised_server_title,
+    cache_hints,
+    healthz_endpoint,
+    json_response,
+    mcp_host,
+    mcp_path,
+    mcp_port,
+    request_state_security,
+    transport_name,
+    transport_security,
+)
 import sys
 
 # Logger is now configured in logging_setup.py, just use it
@@ -27,7 +48,16 @@ import sys
 
 logger.debug(f"Server CWD: {os.getcwd()}")
 
-mcp = FastMCP("OpenApiProxy-Fast")
+mcp = MCPServer(
+    advertised_server_name(),
+    version=PACKAGE_VERSION,
+    title=advertised_server_title(),
+    description=advertised_server_description(),
+    cache_hints=cache_hints(),
+    request_state_security=request_state_security(),
+)
+# Sibling Starlette route: process-local /healthz, no MCP lock (issue #66).
+mcp.custom_route(HEALTHZ_PATH, methods=["GET"])(healthz_endpoint)
 
 spec = None  # Global spec for resources
 
@@ -85,7 +115,14 @@ def _whimsical_blog_prompt() -> str:
             "✨ Write the next whimsical chapter.")
 
 
-@mcp.tool()
+@mcp.tool(
+    title="List Functions",
+    annotations=mcp_types.ToolAnnotations(
+        title="List Functions",
+        read_only_hint=True,
+        idempotent_hint=True,
+    ),
+)
 def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
     """Lists available functions derived from the OpenAPI specification."""
     logger.debug("Executing list_functions tool.")
@@ -99,7 +136,10 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
     global spec
     spec = fetch_openapi_spec(spec_url)
     if isinstance(spec, str):
-        spec = json.loads(spec)
+        try:
+            spec = json.loads(spec) if spec.strip() else None
+        except json.JSONDecodeError:
+            spec = None
     if spec is None:
         logger.error("Spec is None after fetch_openapi_spec, using dummy spec fallback")
         spec = {
@@ -191,12 +231,14 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                     input_schema["required"].append(param_name)
             functions[function_name] = {
                 "name": function_name,
+                "handle": function_name,
                 "description": function_description,
                 "path": path,
                 "method": method.upper(),
                 "operationId": operation.get("operationId"),
                 "original_name": raw_name,
-                "inputSchema": input_schema
+                "inputSchema": input_schema,
+                "annotations": annotations_wire_dict(method, function_name, operation),
             }
             _FUNCTION_OPERATIONS[function_name] = {
                 "path": path,
@@ -205,44 +247,53 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
             }
     functions["list_resources"] = {
         "name": "list_resources",
+        "handle": "list_resources",
         "description": "List available resources",
         "path": None,
         "method": None,
         "operationId": None,
         "original_name": "list_resources",
-        "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+        "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        "annotations": annotations_wire_dict(None, "list_resources", read_only=True),
     }
     functions["read_resource"] = {
         "name": "read_resource",
+        "handle": "read_resource",
         "description": "Read a resource by URI",
         "path": None,
         "method": None,
         "operationId": None,
         "original_name": "read_resource",
-        "inputSchema": {"type": "object", "properties": {"uri": {"type": "string", "description": "Resource URI"}}, "required": ["uri"], "additionalProperties": False}
+        "inputSchema": {"type": "object", "properties": {"uri": {"type": "string", "description": "Resource URI"}}, "required": ["uri"], "additionalProperties": False},
+        "annotations": annotations_wire_dict(None, "read_resource", read_only=True),
     }
     functions["list_prompts"] = {
         "name": "list_prompts",
+        "handle": "list_prompts",
         "description": "List available prompts",
         "path": None,
         "method": None,
         "operationId": None,
         "original_name": "list_prompts",
-        "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+        "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        "annotations": annotations_wire_dict(None, "list_prompts", read_only=True),
     }
     functions["get_prompt"] = {
         "name": "get_prompt",
+        "handle": "get_prompt",
         "description": "Get a prompt by name",
         "path": None,
         "method": None,
         "operationId": None,
         "original_name": "get_prompt",
-        "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "description": "Prompt name"}}, "required": ["name"], "additionalProperties": False}
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "description": "Prompt name"}}, "required": ["name"], "additionalProperties": False},
+        "annotations": annotations_wire_dict(None, "get_prompt", read_only=True),
     }
     logger.debug(f"Discovered {len(functions)} functions from the OpenAPI specification.")
     if "get_tasks_id" not in functions:
         functions["get_tasks_id"] = {
             "name": "get_tasks_id",
+            "handle": "get_tasks_id",
             "description": "Get tasks",
             "path": "/users/{user_id}/tasks",
             "method": "GET",
@@ -258,15 +309,32 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                 },
                 "required": ["user_id"],
                 "additionalProperties": False
-            }
+            },
+            "annotations": annotations_wire_dict(
+                "GET",
+                "get_tasks_id",
+                {"summary": "Get tasks", "operationId": "get_users_tasks"},
+            ),
         }
         logger.debug("Forced registration of get_tasks_id for testing.")
     logger.debug(f"Functions list: {list(functions.values())}")
     return json.dumps(list(functions.values()), indent=2)
 
-@mcp.tool()
-def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_key: str = "OPENAPI_SPEC_URL") -> str:
-    """Calls a function derived from the OpenAPI specification."""
+@mcp.tool(
+    title="Call Function",
+    annotations=mcp_types.ToolAnnotations(
+        title="Call Function",
+        destructive_hint=True,
+    ),
+)
+def call_function(*, function_name: str = "", parameters: Optional[Dict] = None, env_key: str = "OPENAPI_SPEC_URL", handle: str = "") -> str:
+    """Calls a function derived from the OpenAPI specification.
+
+    ``handle`` is an explicit alias for ``function_name``: the value returned
+    as ``handle`` from list_functions. Either is enough; no prior list_functions
+    call on this process is required (the operation map is rebuilt from the spec).
+    """
+    function_name = function_name or handle
     logger.debug(f"call_function invoked with function_name='{function_name}' and parameters={parameters}")
     logger.debug(f"API_KEY: {os.getenv('API_KEY', '<not set>')[:5] + '...' if os.getenv('API_KEY') else '<not set>'}")
     logger.debug(f"STRIP_PARAM: {os.getenv('STRIP_PARAM', '<not set>')}")
@@ -302,6 +370,11 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
         if parameters["name"] != "summarize_spec":
             return json.dumps({"error": "Prompt not found"})
         return json.dumps([{"role": "assistant", "content": {"type": "text", "text": "This OpenAPI spec defines an API’s endpoints, parameters, and responses, making it a blueprint for devs to build and integrate stuff without messing it up."}}])
+    # Rebuild the operation map from the spec when this process never saw
+    # list_functions (fresh instance / round-robin peer). Handles returned by
+    # another instance remain valid because they are just function names.
+    if function_name not in _FUNCTION_OPERATIONS:
+        list_functions(env_key=env_key)
     spec = fetch_openapi_spec(spec_url)
     if spec is None:
         logger.error("Spec is None for call_function")
@@ -454,8 +527,20 @@ def run_simple_server():
     list_functions()
 
     try:
-        logger.debug("Starting MCP server (FastMCP version)...")
-        mcp.run(transport="stdio")
+        selected = transport_name()
+        logger.debug(f"Starting MCP server (MCPServer/simple mode) transport={selected}...")
+        if selected == "streamable-http":
+            mcp.run(
+                transport="streamable-http",
+                host=mcp_host(),
+                port=mcp_port(),
+                streamable_http_path=mcp_path(),
+                json_response=json_response(),
+                stateless_http=True,
+                transport_security=transport_security(),
+            )
+        else:
+            mcp.run(transport="stdio")
     except Exception as e:
         logger.error(f"Unhandled exception in MCP server (FastMCP): {e}", exc_info=True)
         sys.exit(1)

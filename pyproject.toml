@@ -5,24 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mcp-openapi-proxy"
 requires-python = ">=3.10"
-version = "0.3.6"
+version = "0.4.0"
 description = "MCP server for exposing OpenAPI specifications as MCP tools."
 readme = "README.md"
 authors = [
   { name = "Matthew Hand", email = "11550632+matthewhand@users.noreply.github.com" }
 ]
 dependencies = [
-  # mcp 2.x is a breaking rewrite (FastMCP renamed to MCPServer, Resource.uri type
-  # change, etc.) that crashes both server modes at import. Pin to 1.x; see
-  # tests/unit/test_mcp_version_pin.py before relaxing this bound.
-  "mcp[cli]>=1.2.0,<2",
+  # mcp 2.x speaks MCP 2026-07-28 (stateless dual-stack). See docs/MIGRATION-0.4.md.
+  "mcp[cli]>=2.0.0,<3",
   "python-dotenv>=1.0.1",
   "requests>=2.25.0",
   "fastapi>=0.100.0", # For OpenAPI parsing utils if used later, and data validation
-  "pydantic>=2.0",
+  "pydantic>=2.12",
   "prance>=23.6.21.0",
   "openapi-spec-validator>=0.7.1",
   "jmespath>=1.0.1",
+  "uvicorn>=0.32.0",
 ]
 
 [project.scripts]
@@ -32,7 +31,9 @@ mcp-openapi-proxy = "mcp_openapi_proxy:main"  # Correct entry pointing to __init
 dev = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0"
+    "pytest-cov>=4.1.0",
+    "httpx>=0.27.0",
+    "packaging>=24.0",
 ]
 
 [tool.pytest.ini_options]
