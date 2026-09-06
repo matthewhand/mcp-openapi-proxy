@@ -363,8 +363,15 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
             # Potentially add basic auth implementation here if needed
         elif auth_type == "api-key":
             key_name = os.getenv("API_AUTH_HEADER", "Authorization")
-            headers[key_name] = api_key
-            logger.debug(f"Using API_KEY as API-Key in header '{key_name}'.") # Avoid logging key prefix
+            if auth_type_raw != auth_type:
+                # User typed a capitalized scheme (e.g. API_AUTH_TYPE=Api-Key):
+                # send "Authorization: Api-Key <key>" preserving the scheme.
+                # Lowercase `api-key` keeps the raw-key behavior (x-apikey style).
+                headers[key_name] = f"{auth_type_raw} {api_key}"
+                logger.debug(f"Using API_KEY with scheme '{auth_type_raw}' in header '{key_name}'.")
+            else:
+                headers[key_name] = api_key
+                logger.debug(f"Using API_KEY as API-Key in header '{key_name}'.") # Avoid logging key prefix
         elif auth_type:
             # Custom scheme prefix, e.g. API_AUTH_TYPE=Token for NetBox -> "Authorization: Token <key>"
             headers["Authorization"] = f"{auth_type_raw} {api_key}"
