@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.6
+
+### Fixed
+- **`API_AUTH_TYPE=Api-Key` now sends `Authorization: Api-Key <key>`**,
+  preserving the scheme prefix the user typed. Previously the `api-key`
+  branch lowercased the value and emitted a bare key, which strict
+  consumers (e.g. Zep) reject with 401. Lowercase `api-key` keeps the
+  raw-key behavior (`Authorization: <key>` / `x-apikey` for virustotal),
+  so all existing configs are unchanged.
+
 ## 0.3.5
 
 ### Fixed

@@ -76,6 +76,30 @@ def test_handle_auth_custom_scheme_preserves_case(monkeypatch):
     headers = handle_auth({"method": "GET"})
     assert headers == {"Authorization": "ApiKey testkey"}
 
+def test_handle_auth_capitalized_api_key_preserves_scheme(monkeypatch):
+    # API_AUTH_TYPE=Api-Key must send "Authorization: Api-Key <key>" (Zep
+    # requires the scheme prefix; lowercase folding previously stripped it).
+    monkeypatch.setenv("API_KEY", "testkey")
+    monkeypatch.setenv("API_AUTH_TYPE", "Api-Key")
+    headers = handle_auth({"method": "GET"})
+    assert headers == {"Authorization": "Api-Key testkey"}
+
+def test_handle_auth_lowercase_api_key_stays_raw(monkeypatch):
+    # Lowercase `api-key` in the default Authorization header keeps the raw
+    # key (x-apikey-style consumers), unchanged behavior.
+    monkeypatch.setenv("API_KEY", "testkey")
+    monkeypatch.setenv("API_AUTH_TYPE", "api-key")
+    headers = handle_auth({"method": "GET"})
+    assert headers == {"Authorization": "testkey"}
+
+def test_handle_auth_api_key_custom_header_stays_raw(monkeypatch):
+    # api-key + a named header (virustotal x-apikey) keeps the raw key.
+    monkeypatch.setenv("API_KEY", "testkey")
+    monkeypatch.setenv("API_AUTH_TYPE", "api-key")
+    monkeypatch.setenv("API_AUTH_HEADER", "x-apikey")
+    headers = handle_auth({"method": "GET"})
+    assert headers == {"x-apikey": "testkey"}
+
 def test_strip_parameters_with_param(monkeypatch):
     monkeypatch.setenv("STRIP_PARAM", "token")
     params = {"token": "abc123", "channel": "test"}
