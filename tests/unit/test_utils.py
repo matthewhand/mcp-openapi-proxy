@@ -62,6 +62,20 @@ def test_handle_auth_no_api_key():
     headers = handle_auth({"method": "GET"})
     assert headers == {}
 
+def test_handle_auth_custom_scheme_token(monkeypatch):
+    # Unknown API_AUTH_TYPE becomes a custom scheme prefix (NetBox: "Token <key>").
+    monkeypatch.setenv("API_KEY", "testkey")
+    monkeypatch.setenv("API_AUTH_TYPE", "Token")
+    headers = handle_auth({"method": "GET"})
+    assert headers == {"Authorization": "Token testkey"}
+
+def test_handle_auth_custom_scheme_preserves_case(monkeypatch):
+    # The raw type string is kept verbatim, not lowercased, in the header value.
+    monkeypatch.setenv("API_KEY", "testkey")
+    monkeypatch.setenv("API_AUTH_TYPE", "ApiKey")
+    headers = handle_auth({"method": "GET"})
+    assert headers == {"Authorization": "ApiKey testkey"}
+
 def test_strip_parameters_with_param(monkeypatch):
     monkeypatch.setenv("STRIP_PARAM", "token")
     params = {"token": "abc123", "channel": "test"}

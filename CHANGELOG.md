@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.5
+
+### Fixed
+- **Custom Authorization schemes via `API_AUTH_TYPE`** (e.g. `Token` for
+  NetBox). Previously any value other than `bearer`/`basic`/`api-key` logged
+  `Unsupported API_AUTH_TYPE` and sent **no auth header**, so the documented
+  NetBox setup (`Authorization: Token <key>`) could never authenticate.
+  Unknown values are now used verbatim as a custom scheme prefix
+  (`handle_auth` in `mcp_openapi_proxy/utils.py`).
+- netbox example: add `API_AUTH_TYPE=Token` and an `/ipam/ip-addresses`
+  `TOOL_WHITELIST` entry (full spec is enormous; this registers the practical
+  IPAM tools).
+
 ## 0.3.4
 
 ### Fixed
