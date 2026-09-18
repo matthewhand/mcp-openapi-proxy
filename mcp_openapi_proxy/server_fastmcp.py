@@ -19,10 +19,12 @@ from mcp.server.mcpserver import MCPServer
 from mcp_openapi_proxy.logging_setup import logger
 from mcp import types as mcp_types
 from mcp_openapi_proxy.openapi import (
+    OpenAPIReferenceError,
     annotations_wire_dict,
     fetch_openapi_spec,
     build_base_url,
     handle_auth,
+    resolve_local_references,
 )
 from mcp_openapi_proxy.utils import is_tool_whitelisted, normalize_tool_name, strip_parameters, get_additional_headers, deduplicate_tool_name
 from mcp_openapi_proxy.protocol import (
@@ -189,6 +191,23 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                 logger.debug(f"Skipping unsupported method: {method}")
                 continue
             raw_name = f"{method.upper()} {path}"
+            try:
+                resolved_parameters = [
+                    resolve_local_references(param, spec)
+                    for param in operation.get("parameters", [])
+                    if isinstance(param, dict)
+                ]
+                request_body = operation.get("requestBody")
+                if isinstance(request_body, dict):
+                    # Validate request schemas even though simple mode passes
+                    # their values through as the generic `parameters` object.
+                    resolve_local_references(request_body, spec)
+            except OpenAPIReferenceError as e:
+                logger.warning(
+                    "Skipping function for '%s': input schema contains unresolved "
+                    "local $ref '%s'.", raw_name, e.reference,
+                )
+                continue
             function_name = normalize_tool_name(raw_name)
             if function_name in functions:
                 # TOOL_NAME_MAX_LENGTH truncation can make distinct operations
@@ -209,9 +228,12 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                     "description": f"Path parameter {param_name}"
                 }
                 input_schema['required'].append(param_name)
-            for param in operation.get("parameters", []):
+            for param in resolved_parameters:
                 param_name = param.get("name")
-                param_schema = param.get("schema", {}) if isinstance(param.get("schema"), dict) else {}
+                param_schema = (
+                    resolve_local_references(param.get("schema", {}), spec)
+                    if isinstance(param.get("schema"), dict) else {}
+                )
                 param_type = param_schema.get("type", param.get("type", "string"))
                 if param_type not in ["string", "integer", "boolean", "number", "array"]:
                     param_type = "string"
@@ -229,6 +251,9 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                 input_schema["properties"][param_name] = prop
                 if param.get("required", False) and param_name not in input_schema['required']:
                     input_schema["required"].append(param_name)
+            # items and other nested parameter schemas are copied above
+            # resolve any remaining local refs before returning this catalog
+            input_schema = resolve_local_references(input_schema, spec)
             functions[function_name] = {
                 "name": function_name,
                 "handle": function_name,
