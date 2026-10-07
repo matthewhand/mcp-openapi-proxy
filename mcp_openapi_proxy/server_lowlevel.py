@@ -132,6 +132,49 @@ PROMPT_TEMPLATES: Dict[str, Any] = {
 }
 
 
+def register_env_prompt(raw: Optional[str] = None) -> None:
+    """Register one extra prompt from the PROMPT env var when prompts are enabled.
+
+    Read at call time so tests can set PROMPT without reloading the module.
+    Import-time registration covers a normal process start.
+    """
+    from mcp_openapi_proxy.prompt_env import BUILTIN_PROMPT_NAMES, parse_prompt_env
+
+    if os.getenv("ENABLE_PROMPTS", "true").lower() != "true":
+        return
+    parsed = parse_prompt_env(raw)
+    if not parsed:
+        return
+    name = parsed["name"]
+    if name in BUILTIN_PROMPT_NAMES:
+        logger.error(f"PROMPT name {name!r} collides with a built-in prompt; ignoring")
+        return
+    prompts[:] = [p for p in prompts if p.name != name]
+    prompts.append(
+        mcp_types.Prompt(
+            name=name,
+            description=parsed["description"],
+            arguments=[],
+        )
+    )
+    stored = [
+        mcp_types.PromptMessage(
+            role=item["role"],
+            content=mcp_types.TextContent(type="text", text=item["text"]),
+        )
+        for item in parsed["messages"]
+    ]
+
+    def _messages(_args: Any) -> List[mcp_types.PromptMessage]:
+        return list(stored)
+
+    PROMPT_TEMPLATES[name] = _messages
+    logger.debug(f"Added dynamic prompt from PROMPT: {name}")
+
+
+register_env_prompt()
+
+
 def build_capabilities() -> "mcp_types.ServerCapabilities":
     """Advertise a capability whenever its feature is enabled (ENABLE_*)."""
     return mcp_types.ServerCapabilities(

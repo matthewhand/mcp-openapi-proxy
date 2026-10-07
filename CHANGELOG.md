@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `PROMPT`: optional JSON env var that registers one extra MCP prompt
+  (`name`, `description`, and `messages` of `{user, assistant}` pairs)
+  alongside `summarize_spec` and `whimsical_blog`, in low-level and simple mode.
+  Invalid JSON is logged and ignored. Built-in prompt names are reserved.
+
 ## 0.4.0
 
 ### Changed
