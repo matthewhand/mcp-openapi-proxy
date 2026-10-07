@@ -12,8 +12,11 @@ from mcp import types
 from mcp_openapi_proxy.utils import normalize_tool_name
 from .logging_setup import logger
 
+import subprocess
+
+
 def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
-    """Fetch and parse an OpenAPI specification from a URL with retries."""
+    """Fetch and parse an OpenAPI specification from a URL with retries. Validates remote URLs with curl before fetching."""
     logger.debug(f"Fetching OpenAPI spec from URL: {url}")
     attempt = 0
     while attempt < retries:
@@ -22,10 +25,27 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                 with open(url[7:], "r") as f:
                     content = f.read()
             else:
+                # Validate URL with curl -I
+                curl_cmd = ["curl", "-I", "--max-time", "15", url]
+                curl_result = subprocess.run(curl_cmd, capture_output=True, text=True)
+                status_line = (
+                    curl_result.stdout.splitlines()[0]
+                    if curl_result.stdout
+                    else curl_result.stderr.strip()
+                )
+                if curl_result.returncode != 0 or "200" not in status_line:
+                    logger.error(f"curl validation failed for {url}: {status_line}")
+                    return None
                 # Check IGNORE_SSL_SPEC env var
-                ignore_ssl_spec = os.getenv("IGNORE_SSL_SPEC", "false").lower() in ("true", "1", "yes")
+                ignore_ssl_spec = os.getenv("IGNORE_SSL_SPEC", "false").lower() in (
+                    "true",
+                    "1",
+                    "yes",
+                )
                 verify_ssl_spec = not ignore_ssl_spec
-                logger.debug(f"Fetching spec with SSL verification: {verify_ssl_spec} (IGNORE_SSL_SPEC={ignore_ssl_spec})")
+                logger.debug(
+                    f"Fetching spec with SSL verification: {verify_ssl_spec} (IGNORE_SSL_SPEC={ignore_ssl_spec})"
+                )
                 response = requests.get(url, timeout=10, verify=verify_ssl_spec)
                 response.raise_for_status()
                 content = response.text
@@ -38,16 +58,21 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                     spec = yaml.safe_load(content)
                     logger.debug(f"Parsed as YAML from {url}")
                 except yaml.YAMLError as ye:
-                    logger.error(f"YAML parsing failed: {ye}. Raw content: {content[:500]}...")
+                    logger.error(
+                        f"YAML parsing failed: {ye}. Raw content: {content[:500]}..."
+                    )
                     return None
             return spec
         except requests.RequestException as e:
             attempt += 1
             logger.warning(f"Fetch attempt {attempt}/{retries} failed: {e}")
             if attempt == retries:
-                logger.error(f"Failed to fetch spec from {url} after {retries} attempts: {e}")
+                logger.error(
+                    f"Failed to fetch spec from {url} after {retries} attempts: {e}"
+                )
                 return None
     return None
+
 
 def build_base_url(spec: Dict) -> Optional[str]:
     """Construct the base URL from the OpenAPI spec or override."""
@@ -65,8 +90,11 @@ def build_base_url(spec: Dict) -> Optional[str]:
     elif "host" in spec and "schemes" in spec:
         scheme = spec["schemes"][0] if spec["schemes"] else "https"
         return f"{scheme}://{spec['host']}{spec.get('basePath', '')}"
-    logger.error("No servers or host/schemes defined in spec and no SERVER_URL_OVERRIDE.")
+    logger.error(
+        "No servers or host/schemes defined in spec and no SERVER_URL_OVERRIDE."
+    )
     return None
+
 
 def handle_auth(operation: Dict) -> Dict[str, str]:
     """Handle authentication based on environment variables and operation security."""
@@ -82,91 +110,126 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
         elif auth_type == "api-key":
             key_name = os.getenv("API_AUTH_HEADER", "Authorization")
             headers[key_name] = api_key
-            logger.debug(f"Using API_KEY as API-Key in header {key_name}: {api_key[:5]}...")
+            logger.debug(
+                f"Using API_KEY as API-Key in header {key_name}: {api_key[:5]}..."
+            )
     return headers
+
 
 def register_functions(spec: Dict) -> List[types.Tool]:
     """Register tools from OpenAPI spec."""
     from .utils import is_tool_whitelisted
-    
     tools: List[types.Tool] = []
-    logger.debug("Clearing previously registered tools to allow re-registration")
-    if not spec:
-        logger.error("OpenAPI spec is None or empty.")
-        return tools
-    if 'paths' not in spec:
-        logger.error("No 'paths' key in OpenAPI spec.")
-        return tools
-    logger.debug(f"Spec paths available: {list(spec['paths'].keys())}")
-    filtered_paths = {path: item for path, item in spec['paths'].items() if is_tool_whitelisted(path)}
-    logger.debug(f"Filtered paths: {list(filtered_paths.keys())}")
-    if not filtered_paths:
-        logger.warning("No whitelisted paths found in OpenAPI spec after filtering.")
-        return tools
-    for path, path_item in filtered_paths.items():
-        if not path_item:
-            logger.debug(f"Empty path item for {path}")
-            continue
-        for method, operation in path_item.items():
-            if method.lower() not in ['get', 'post', 'put', 'delete', 'patch']:
-                logger.debug(f"Skipping unsupported method {method} for {path}")
+    try:
+        logger.debug("Clearing previously registered tools to allow re-registration")
+        if not spec:
+            logger.error("OpenAPI spec is None or empty.")
+            return tools
+        if "paths" not in spec:
+            logger.error("No 'paths' key in OpenAPI spec.")
+            return tools
+        logger.debug(f"Spec paths available: {list(spec['paths'].keys())}")
+        filtered_paths = {
+            path: item for path, item in spec["paths"].items() if is_tool_whitelisted(path)
+        }
+        logger.debug(f"Filtered paths: {list(filtered_paths.keys())}")
+        if not filtered_paths:
+            logger.warning("No whitelisted paths found in OpenAPI spec after filtering.")
+            return tools
+        for path, path_item in filtered_paths.items():
+            if not path_item:
+                logger.debug(f"Empty path item for {path}")
                 continue
-            try:
-                raw_name = f"{method.upper()} {path}"
-                function_name = normalize_tool_name(raw_name)
-                description = operation.get('summary', operation.get('description', 'No description available'))
-                input_schema = {
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                    "additionalProperties": False
-                }
-                parameters = operation.get('parameters', [])
-                placeholder_params = [part.strip('{}') for part in path.split('/') if '{' in part and '}' in part]
-                for param_name in placeholder_params:
-                    input_schema['properties'][param_name] = {
-                        "type": "string",
-                        "description": f"Path parameter {param_name}"
+            for method, operation in path_item.items():
+                if method.lower() not in ["get", "post", "put", "delete", "patch"]:
+                    logger.debug(f"Skipping unsupported method {method} for {path}")
+                    continue
+                try:
+                    raw_name = f"{method.upper()} {path}"
+                    function_name = normalize_tool_name(raw_name)
+                    description = operation.get(
+                        "summary", operation.get("description", "No description available")
+                    )
+                    input_schema = {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                        "additionalProperties": False,
                     }
-                    input_schema['required'].append(param_name)
-                    logger.debug(f"Added URI placeholder {param_name} to inputSchema for {function_name}")
-                for param in parameters:
-                    param_name = param.get('name')
-                    param_in = param.get('in')
-                    if param_in in ['path', 'query']:
-                        param_type = param.get('schema', {}).get('type', 'string')
-                        schema_type = param_type if param_type in ['string', 'integer', 'boolean', 'number'] else 'string'
-                        input_schema['properties'][param_name] = {
-                            "type": schema_type,
-                            "description": param.get('description', f"{param_in} parameter {param_name}")
+                    parameters = operation.get("parameters", [])
+                    placeholder_params = [
+                        part.strip("{}")
+                        for part in path.split("/")
+                        if "{" in part and "}" in part
+                    ]
+                    for param_name in placeholder_params:
+                        input_schema["properties"][param_name] = {
+                            "type": "string",
+                            "description": f"Path parameter {param_name}",
                         }
-                        if param.get('required', False) and param_name not in input_schema['required']:
-                            input_schema['required'].append(param_name)
-                tool = types.Tool(
-                    name=function_name,
-                    description=description,
-                    inputSchema=input_schema,
-                )
-                tools.append(tool)
-                logger.debug(f"Registered function: {function_name} ({method.upper()} {path}) with inputSchema: {json.dumps(input_schema)}")
-            except Exception as e:
-                logger.error(f"Error registering function for {method.upper()} {path}: {e}", exc_info=True)
-    logger.debug(f"Registered {len(tools)} functions from OpenAPI spec.")
-    from . import server_lowlevel
-    server_lowlevel.tools.clear()
-    server_lowlevel.tools.extend(tools)
-    return tools
+                        input_schema["required"].append(param_name)
+                        logger.debug(
+                            f"Added URI placeholder {param_name} to inputSchema for {function_name}"
+                        )
+                    for param in parameters:
+                        param_name = param.get("name")
+                        param_in = param.get("in")
+                        if param_in in ["path", "query"]:
+                            param_type = param.get("schema", {}).get("type", "string")
+                            schema_type = (
+                                param_type
+                                if param_type in ["string", "integer", "boolean", "number"]
+                                else "string"
+                            )
+                            input_schema["properties"][param_name] = {
+                                "type": schema_type,
+                                "description": param.get(
+                                    "description", f"{param_in} parameter {param_name}"
+                                ),
+                            }
+                            if (
+                                param.get("required", False)
+                                and param_name not in input_schema["required"]
+                            ):
+                                input_schema["required"].append(param_name)
+                    tool = types.Tool(
+                        name=function_name,
+                        description=description,
+                        inputSchema=input_schema,
+                    )
+                    tools.append(tool)
+                    logger.debug(
+                        f"Registered function: {function_name} ({method.upper()} {path}) with inputSchema: {json.dumps(input_schema)}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error registering function for {method.upper()} {path}: {e}",
+                        exc_info=True,
+                    )
+        from . import server_lowlevel
+        server_lowlevel.tools.clear()
+        server_lowlevel.tools.extend(tools)
+        return tools
+    except Exception as e:
+        logger.error(f"Error in register_functions: {e}", exc_info=True)
+        return []
+
 
 def lookup_operation_details(function_name: str, spec: Dict) -> Union[Dict, None]:
     """Look up operation details from OpenAPI spec by function name."""
-    if not spec or 'paths' not in spec:
+    if not spec or "paths" not in spec:
         return None
-    for path, path_item in spec['paths'].items():
+    for path, path_item in spec["paths"].items():
         for method, operation in path_item.items():
-            if method.lower() not in ['get', 'post', 'put', 'delete', 'patch']:
+            if method.lower() not in ["get", "post", "put", "delete", "patch"]:
                 continue
             raw_name = f"{method.upper()} {path}"
             current_function_name = normalize_tool_name(raw_name)
             if current_function_name == function_name:
-                return {"path": path, "method": method.upper(), "operation": operation, "original_path": path}
+                return {
+                    "path": path,
+                    "method": method.upper(),
+                    "operation": operation,
+                    "original_path": path,
+                }
     return None

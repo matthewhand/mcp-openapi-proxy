@@ -1,5 +1,6 @@
 def test_is_tool_whitelisted_multiple(monkeypatch):
     from mcp_openapi_proxy.utils import is_tool_whitelisted
+
     monkeypatch.delenv("TOOL_WHITELIST", raising=False)
     monkeypatch.setenv("TOOL_WHITELIST", "/foo,/bar/{id}")
     assert is_tool_whitelisted("/foo/abc")

@@ -11,16 +11,22 @@ from dotenv import load_dotenv
 from mcp_openapi_proxy.utils import fetch_openapi_spec
 from mcp_openapi_proxy.server_fastmcp import mcp, list_functions, call_function
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../.env'))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../.env"))
+
 
 @pytest.mark.integration
 def test_slack_users_info(reset_env_and_module):
     """Test users.info with SLACK_API_KEY."""
     env_key = reset_env_and_module
     slack_api_key = os.getenv("SLACK_API_KEY")
-    spec_url = os.getenv("SLACK_SPEC_URL", "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json")
+    spec_url = os.getenv(
+        "SLACK_SPEC_URL",
+        "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json",
+    )
     tool_prefix = os.getenv("TOOL_NAME_PREFIX", "slack_")
-    print(f"🍺 DEBUG: SLACK_API_KEY from env: {slack_api_key if slack_api_key else 'Not set'}")
+    print(
+        f"🍺 DEBUG: SLACK_API_KEY from env: {slack_api_key if slack_api_key else 'Not set'}"
+    )
     if not slack_api_key or "your-token" in slack_api_key:
         print("🍻 DEBUG: Skipping due to missing or invalid SLACK_API_KEY")
         pytest.skip("SLACK_API_KEY missing or placeholder—please configure it!")
@@ -51,9 +57,7 @@ def test_slack_users_info(reset_env_and_module):
 
     print("🍌 DEBUG: Calling users.info for Slackbot")
     response_json = call_function(
-        function_name=tool_name,
-        parameters={"user": "USLACKBOT"},
-        env_key=env_key
+        function_name=tool_name, parameters={"user": "USLACKBOT"}, env_key=env_key
     )
     print(f"🍒 DEBUG: Raw response: {response_json}")
     try:
@@ -63,27 +67,37 @@ def test_slack_users_info(reset_env_and_module):
             if "401" in response["error"]:
                 assert False, "SLACK_API_KEY is invalid—please check it!"
             assert False, f"Slack API returned an error: {response_json}"
-        assert isinstance(response, dict), f"Response is not a dictionary: {response_json}"
+        assert isinstance(
+            response, dict
+        ), f"Response is not a dictionary: {response_json}"
         assert response["ok"], f"Slack API request failed: {response_json}"
         assert "user" in response, f"No 'user' key in response: {response_json}"
         assert response["user"]["id"] == "USLACKBOT", "Unexpected user ID in response"
     except json.JSONDecodeError:
         assert False, f"Response is not valid JSON: {response_json}"
 
+
 @pytest.mark.integration
 def test_slack_conversations_list(reset_env_and_module):
     """Test conversations.list endpoint."""
     env_key = reset_env_and_module
     slack_api_key = os.getenv("SLACK_API_KEY")
-    spec_url = os.getenv("SLACK_SPEC_URL", "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json")
+    spec_url = os.getenv(
+        "SLACK_SPEC_URL",
+        "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json",
+    )
     tool_prefix = os.getenv("TOOL_NAME_PREFIX", "slack_")
-    print(f"🍺 DEBUG: SLACK_API_KEY from env: {slack_api_key if slack_api_key else 'Not set'}")
+    print(
+        f"🍺 DEBUG: SLACK_API_KEY from env: {slack_api_key if slack_api_key else 'Not set'}"
+    )
     if not slack_api_key:
         pytest.skip("SLACK_API_KEY not provided—skipping test")
 
     spec = fetch_openapi_spec(spec_url)
     assert spec, "Failed to fetch specification"
-    assert "/conversations.list" in spec["paths"], "No conversations.list endpoint in spec"
+    assert (
+        "/conversations.list" in spec["paths"]
+    ), "No conversations.list endpoint in spec"
     assert "servers" in spec or "host" in spec, "No servers or host in specification"
 
     os.environ[env_key] = spec_url
@@ -101,8 +115,12 @@ def test_slack_conversations_list(reset_env_and_module):
 
     response_json = call_function(
         function_name=tool_name,
-        parameters={"exclude_archived": "true", "types": "public_channel,private_channel", "limit": "100"},
-        env_key=env_key
+        parameters={
+            "exclude_archived": "true",
+            "types": "public_channel,private_channel",
+            "limit": "100",
+        },
+        env_key=env_key,
     )
     print(f"🍒 DEBUG: Raw response: {response_json}")
     response = json.loads(response_json)
@@ -114,15 +132,21 @@ def test_slack_conversations_list(reset_env_and_module):
     assert channel_ids, "Failed to extract channel IDs from response"
     return channel_ids
 
+
 @pytest.mark.integration
 def test_slack_post_message(reset_env_and_module):
     """Test posting a message to a Slack channel."""
     env_key = reset_env_and_module
     slack_api_key = os.getenv("SLACK_API_KEY")
     test_channel = os.getenv("TEST_SLACK_CHANNEL")
-    spec_url = os.getenv("SLACK_SPEC_URL", "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json")
+    spec_url = os.getenv(
+        "SLACK_SPEC_URL",
+        "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json",
+    )
     tool_prefix = os.getenv("TOOL_NAME_PREFIX", "slack_")
-    print(f"🍺 DEBUG: SLACK_API_KEY from env: {slack_api_key if slack_api_key else 'Not set'}")
+    print(
+        f"🍺 DEBUG: SLACK_API_KEY from env: {slack_api_key if slack_api_key else 'Not set'}"
+    )
     if not slack_api_key:
         pytest.skip("SLACK_API_KEY not provided—skipping test")
     if not test_channel:
@@ -141,15 +165,22 @@ def test_slack_post_message(reset_env_and_module):
 
     channels = test_slack_conversations_list(reset_env_and_module)
     if test_channel not in channels:
-        pytest.skip(f"TEST_SLACK_CHANNEL {test_channel} not found in {channels}—check workspace")
+        pytest.skip(
+            f"TEST_SLACK_CHANNEL {test_channel} not found in {channels}—check workspace"
+        )
 
     tool_name = f"{tool_prefix}post_chat_postmessage"
     response_json = call_function(
         function_name=tool_name,
-        parameters={"channel": test_channel, "text": "Integration test message from mcp-openapi-proxy"},
-        env_key=env_key
+        parameters={
+            "channel": test_channel,
+            "text": "Integration test message from mcp-openapi-proxy",
+        },
+        env_key=env_key,
     )
     print(f"🍒 DEBUG: Raw response: {response_json}")
     response = json.loads(response_json)
     assert response["ok"], f"Message posting failed: {response_json}"
-    assert response["channel"] == test_channel, f"Message posted to incorrect channel: {response_json}"
+    assert (
+        response["channel"] == test_channel
+    ), f"Message posted to incorrect channel: {response_json}"

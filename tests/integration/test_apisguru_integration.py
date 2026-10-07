@@ -2,12 +2,15 @@ import os
 import pytest
 import requests
 
+
 @pytest.mark.integration
 class TestApisGuruIntegration:
     @classmethod
     def setup_class(cls):
         # Set up environment to use the APIs.guru config
-        os.environ["OPENAPI_SPEC_URL"] = "https://raw.githubusercontent.com/APIs-guru/openapi-directory/refs/heads/main/APIs/apis.guru/2.2.0/openapi.yaml"
+        os.environ["OPENAPI_SPEC_URL"] = (
+            "https://raw.githubusercontent.com/APIs-guru/openapi-directory/refs/heads/main/APIs/apis.guru/2.2.0/openapi.yaml"
+        )
         cls.base_url = "https://api.apis.guru/v2"
 
     def test_list_apis(self):

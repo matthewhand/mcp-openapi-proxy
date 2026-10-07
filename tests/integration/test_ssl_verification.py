@@ -12,6 +12,7 @@ import http.server
 import pytest
 from mcp_openapi_proxy.utils import fetch_openapi_spec
 
+
 class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -19,12 +20,15 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'{"dummy": "spec"}')
 
+
 @pytest.fixture
 def ssl_server(tmp_path):
     cert_file = tmp_path / "cert.pem"
     key_file = tmp_path / "key.pem"
     # Generate a self-signed certificate using openssl (ensure openssl is installed)
-    os.system(f"openssl req -x509 -newkey rsa:2048 -nodes -keyout {key_file} -out {cert_file} -days 1 -subj '/CN=localhost'")
+    os.system(
+        f"openssl req -x509 -newkey rsa:2048 -nodes -keyout {key_file} -out {cert_file} -days 1 -subj '/CN=localhost'"
+    )
     server_address = ("localhost", 0)
     httpd = http.server.HTTPServer(server_address, SimpleHTTPRequestHandler)
     # Wrap socket in SSL with the self-signed certificate
@@ -39,10 +43,12 @@ def ssl_server(tmp_path):
     httpd.shutdown()
     thread.join()
 
+
 def test_fetch_openapi_spec_invalid_cert_without_ignore(ssl_server):
     # Without disabling SSL verification, fetch_openapi_spec should return an error message indicating failure.
     result = fetch_openapi_spec(ssl_server)
     assert result is None
+
 
 def test_fetch_openapi_spec_invalid_cert_with_ignore(monkeypatch, ssl_server):
     # Set the environment variable to disable SSL verification.
@@ -50,6 +56,7 @@ def test_fetch_openapi_spec_invalid_cert_with_ignore(monkeypatch, ssl_server):
     spec = fetch_openapi_spec(ssl_server)
     # The response should contain "dummy" because our server returns {"dummy": "spec"}.
     import json
+
     if isinstance(spec, dict):
         spec_text = json.dumps(spec)
     else:

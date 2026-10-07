@@ -10,12 +10,15 @@ from dotenv import load_dotenv
 from mcp_openapi_proxy.utils import fetch_openapi_spec
 from mcp_openapi_proxy.server_fastmcp import list_functions, call_function
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../.env'))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../.env"))
 
-SPEC_URL = "https://storage.googleapis.com/versori-assets/public-specs/20240214/NotionAPI.yml"
+SPEC_URL = (
+    "https://storage.googleapis.com/versori-assets/public-specs/20240214/NotionAPI.yml"
+)
 SERVER_URL = "https://api.notion.com"
 EXTRA_HEADERS = "Notion-Version: 2022-06-28"
 TOOL_PREFIX = "notion_"
+
 
 def setup_notion_env(env_key, notion_api_key):
     """Set up environment variables for Notion tests."""
@@ -27,9 +30,13 @@ def setup_notion_env(env_key, notion_api_key):
     os.environ["DEBUG"] = "true"
     print(f"DEBUG: API_KEY set to: {os.environ['API_KEY'][:5]}...")
 
+
 def get_tool_name(tools, original_name):
     """Find tool name by original endpoint name."""
-    return next((tool["name"] for tool in tools if tool["original_name"] == original_name), None)
+    return next(
+        (tool["name"] for tool in tools if tool["original_name"] == original_name), None
+    )
+
 
 @pytest.fixture
 def notion_ids(reset_env_and_module):
@@ -42,7 +49,7 @@ def notion_ids(reset_env_and_module):
         pytest.skip("NOTION_API_KEY missing or placeholder—set it in .env, please!")
 
     setup_notion_env(env_key, notion_api_key)
-    
+
     print(f"DEBUG: Fetching spec from {SPEC_URL}")
     spec = fetch_openapi_spec(SPEC_URL)
     assert spec, f"Failed to fetch spec from {SPEC_URL}"
@@ -58,9 +65,7 @@ def notion_ids(reset_env_and_module):
 
     print(f"DEBUG: Calling {search_tool} to find IDs")
     response_json = call_function(
-        function_name=search_tool,
-        parameters={"query": ""},
-        env_key=env_key
+        function_name=search_tool, parameters={"query": ""}, env_key=env_key
     )
     print(f"DEBUG: Search response: {response_json}")
     response = json.loads(response_json)
@@ -75,12 +80,13 @@ def notion_ids(reset_env_and_module):
             db_id = item["id"]
         if page_id and db_id:
             break
-    
+
     if not page_id or not db_id:
         print(f"DEBUG: Page ID: {page_id}, DB ID: {db_id}")
         pytest.skip("No page or database found in search—please add some to Notion!")
 
     return env_key, tools, page_id, db_id
+
 
 @pytest.mark.integration
 def test_notion_users_list(notion_ids):
@@ -90,7 +96,9 @@ def test_notion_users_list(notion_ids):
     assert tool_name, "Function for GET /v1/users not found!"
 
     print(f"DEBUG: Calling {tool_name} for user list")
-    response_json = call_function(function_name=tool_name, parameters={}, env_key=env_key)
+    response_json = call_function(
+        function_name=tool_name, parameters={}, env_key=env_key
+    )
     print(f"DEBUG: Raw response: {response_json}")
     try:
         response = json.loads(response_json)
@@ -99,12 +107,15 @@ def test_notion_users_list(notion_ids):
             if "401" in response["error"] or "invalid_token" in response["error"]:
                 assert False, "NOTION_API_KEY is invalid—please check your token!"
             assert False, f"Notion API returned an error: {response_json}"
-        assert isinstance(response, dict), f"Response is not a dictionary: {response_json}"
+        assert isinstance(
+            response, dict
+        ), f"Response is not a dictionary: {response_json}"
         assert "results" in response, f"No 'results' key in response: {response_json}"
         assert isinstance(response["results"], list), "Results is not a list"
         print(f"DEBUG: Found {len(response['results'])} users—excellent!")
     except json.JSONDecodeError:
         assert False, f"Response is not valid JSON: {response_json}"
+
 
 @pytest.mark.integration
 def test_notion_users_me(notion_ids):
@@ -114,7 +125,9 @@ def test_notion_users_me(notion_ids):
     assert tool_name, "Function for GET /v1/users/me not found!"
 
     print(f"DEBUG: Calling {tool_name} for bot user")
-    response_json = call_function(function_name=tool_name, parameters={}, env_key=env_key)
+    response_json = call_function(
+        function_name=tool_name, parameters={}, env_key=env_key
+    )
     print(f"DEBUG: Raw response: {response_json}")
     try:
         response = json.loads(response_json)
@@ -123,12 +136,17 @@ def test_notion_users_me(notion_ids):
             if "401" in response["error"] or "invalid_token" in response["error"]:
                 assert False, "NOTION_API_KEY is invalid—please check your token!"
             assert False, f"Notion API returned an error: {response_json}"
-        assert isinstance(response, dict), f"Response is not a dictionary: {response_json}"
-        assert "object" in response and response["object"] == "user", "Response is not a user object"
+        assert isinstance(
+            response, dict
+        ), f"Response is not a dictionary: {response_json}"
+        assert (
+            "object" in response and response["object"] == "user"
+        ), "Response is not a user object"
         assert "type" in response and response["type"] == "bot", "Expected bot user"
         print(f"DEBUG: Got bot user: {response.get('name', 'Unnamed')}—excellent!")
     except json.JSONDecodeError:
         assert False, f"Response is not valid JSON: {response_json}"
+
 
 @pytest.mark.integration
 def test_notion_search(notion_ids):
@@ -139,9 +157,7 @@ def test_notion_search(notion_ids):
 
     print(f"DEBUG: Calling {tool_name} for search")
     response_json = call_function(
-        function_name=tool_name,
-        parameters={"query": "test"},
-        env_key=env_key
+        function_name=tool_name, parameters={"query": "test"}, env_key=env_key
     )
     print(f"DEBUG: Raw response: {response_json}")
     try:
@@ -151,12 +167,15 @@ def test_notion_search(notion_ids):
             if "401" in response["error"] or "invalid_token" in response["error"]:
                 assert False, "NOTION_API_KEY is invalid—please check your token!"
             assert False, f"Notion API returned an error: {response_json}"
-        assert isinstance(response, dict), f"Response is not a dictionary: {response_json}"
+        assert isinstance(
+            response, dict
+        ), f"Response is not a dictionary: {response_json}"
         assert "results" in response, f"No 'results' key in response: {response_json}"
         assert isinstance(response["results"], list), "Results is not a list"
         print(f"DEBUG: Found {len(response['results'])} search results—excellent!")
     except json.JSONDecodeError:
         assert False, f"Response is not valid JSON: {response_json}"
+
 
 @pytest.mark.integration
 def test_notion_get_page(notion_ids):
@@ -167,9 +186,7 @@ def test_notion_get_page(notion_ids):
 
     print(f"DEBUG: Calling {tool_name} for page {page_id}")
     response_json = call_function(
-        function_name=tool_name,
-        parameters={"id": page_id},
-        env_key=env_key
+        function_name=tool_name, parameters={"id": page_id}, env_key=env_key
     )
     print(f"DEBUG: Raw response: {response_json}")
     try:
@@ -179,12 +196,19 @@ def test_notion_get_page(notion_ids):
             if "401" in response["error"] or "invalid_token" in response["error"]:
                 assert False, "NOTION_API_KEY is invalid—please check your token!"
             assert False, f"Notion API returned an error: {response_json}"
-        assert isinstance(response, dict), f"Response is not a dictionary: {response_json}"
-        assert "object" in response and response["object"] == "page", "Response is not a page object"
-        assert response["id"] == page_id, f"Expected page ID {page_id}, got {response['id']}"
+        assert isinstance(
+            response, dict
+        ), f"Response is not a dictionary: {response_json}"
+        assert (
+            "object" in response and response["object"] == "page"
+        ), "Response is not a page object"
+        assert (
+            response["id"] == page_id
+        ), f"Expected page ID {page_id}, got {response['id']}"
         print(f"DEBUG: Got page: {response.get('url', 'No URL')}—excellent!")
     except json.JSONDecodeError:
         assert False, f"Response is not valid JSON: {response_json}"
+
 
 @pytest.mark.integration
 def test_notion_query_database(notion_ids):
@@ -195,9 +219,7 @@ def test_notion_query_database(notion_ids):
 
     print(f"DEBUG: Calling {tool_name} for database {db_id}")
     response_json = call_function(
-        function_name=tool_name,
-        parameters={"id": db_id},
-        env_key=env_key
+        function_name=tool_name, parameters={"id": db_id}, env_key=env_key
     )
     print(f"DEBUG: Raw response: {response_json}")
     try:
@@ -207,7 +229,9 @@ def test_notion_query_database(notion_ids):
             if "401" in response["error"] or "invalid_token" in response["error"]:
                 assert False, "NOTION_API_KEY is invalid—please check your token!"
             assert False, f"Notion API returned an error: {response_json}"
-        assert isinstance(response, dict), f"Response is not a dictionary: {response_json}"
+        assert isinstance(
+            response, dict
+        ), f"Response is not a dictionary: {response_json}"
         assert "results" in response, f"No 'results' key in response: {response_json}"
         assert isinstance(response["results"], list), "Results is not a list"
         print(f"DEBUG: Found {len(response['results'])} database entries—excellent!")

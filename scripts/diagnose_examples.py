@@ -9,16 +9,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 def check_env_vars(env_config):
     results = {}
     for key, value in env_config.items():
-        matches = re.findall(r'\$\{([^}]+)\}', value)
+        matches = re.findall(r"\$\{([^}]+)\}", value)
         if matches:
             for var in matches:
-                results[var] = (os.environ.get(var) is not None)
+                results[var] = os.environ.get(var) is not None
         else:
-            results[key] = (os.environ.get(value) is not None)
+            results[key] = os.environ.get(value) is not None
     return results
+
 
 def fetch_spec(url):
     try:
@@ -36,6 +38,7 @@ def fetch_spec(url):
         return spec, "Success"
     except Exception as e:
         return None, f"Error: {e}"
+
 
 def analyze_example_file(file_path):
     report = {}
@@ -68,23 +71,44 @@ def analyze_example_file(file_path):
         env_check = {}
         for key, value in env_config.items():
             if "${" in value:
-                matches = re.findall(r'\$\{([^}]+)\}', value)
+                matches = re.findall(r"\$\{([^}]+)\}", value)
                 for var in matches:
-                    env_check[var] = (os.environ.get(var) is not None)
+                    env_check[var] = os.environ.get(var) is not None
         sub_report["env_vars_set"] = env_check
         server_reports[server] = sub_report
     report["servers"] = server_reports
     return report
 
+
+def print_markdown_report(report):
+    print(f"\n### {os.path.basename(report['file'])}")
+    if "error" in report:
+        print(f"**Error:** {report['error']}")
+        return
+    print("| Server | Spec URL | HTTP Status | Spec Valid | Missing Env Vars |")
+    print("|--------|----------|-------------|-----------|------------------|")
+    for server, sub_report in report["servers"].items():
+        spec_url = sub_report.get("spec_url", "-")
+        curl_status = sub_report.get("curl_status", "-")
+        spec_valid = "✅" if sub_report.get("spec_valid") else "❌"
+        env_vars_set = sub_report.get("env_vars_set", {})
+        missing_envs = ", ".join([k for k, v in env_vars_set.items() if not v]) or "-"
+        print(
+            f"| {server} | {spec_url} | {curl_status} | {spec_valid} | {missing_envs} |"
+        )
+
+
 def main():
     reports = []
     example_files = glob.glob("examples/*")
-    filtered_files = [f for f in example_files if not f.endswith(".bak")]
-    for file in filtered_files:
-        rep = analyze_example_file(file)
-        reports.append(rep)
-    for rep in reports:
-        print(json.dumps(rep, indent=2))
+    for file_path in example_files:
+        if not file_path.endswith(".json"):
+            continue
+        report = analyze_example_file(file_path)
+        reports.append(report)
+    for report in reports:
+        print_markdown_report(report)
+
 
 if __name__ == "__main__":
     main()

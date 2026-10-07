@@ -11,7 +11,8 @@ from mcp_openapi_proxy.utils import fetch_openapi_spec
 from mcp_openapi_proxy.server_fastmcp import mcp, list_functions, call_function
 
 # Load .env file from project root
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../.env'))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../.env"))
+
 
 @pytest.mark.integration
 def test_render_services_list(reset_env_and_module):
@@ -19,7 +20,10 @@ def test_render_services_list(reset_env_and_module):
     env_key = reset_env_and_module
     render_api_key = os.getenv("RENDER_API_KEY")
     # Prefer RENDER_SPEC_URL if set, else use Render's public OpenAPI spec
-    spec_url = os.getenv("RENDER_SPEC_URL", "https://api-docs.render.com/openapi/6140fb3daeae351056086186")
+    spec_url = os.getenv(
+        "RENDER_SPEC_URL",
+        "https://api-docs.render.com/openapi/6140fb3daeae351056086186",
+    )
     # Always set SERVER_URL_OVERRIDE to the correct Render API base for this test
     os.environ["SERVER_URL_OVERRIDE"] = "https://api.render.com/v1"
     tool_prefix = os.getenv("TOOL_NAME_PREFIX", "render_")
@@ -34,7 +38,9 @@ def test_render_services_list(reset_env_and_module):
     assert openapi_spec_data, f"Failed to fetch spec from {spec_url}"
     assert "paths" in openapi_spec_data, "No 'paths' key in spec"
     assert "/services" in openapi_spec_data["paths"], "No /services endpoint in spec"
-    assert "servers" in openapi_spec_data or "host" in openapi_spec_data, "No servers or host defined in spec"
+    assert (
+        "servers" in openapi_spec_data or "host" in openapi_spec_data
+    ), "No servers or host defined in spec"
 
     # Set env vars
     os.environ[env_key] = spec_url
@@ -50,10 +56,14 @@ def test_render_services_list(reset_env_and_module):
     registered_tools = list_functions(env_key=env_key)
     assert registered_tools, "No tools registered from spec!"
     tools = json.loads(registered_tools)
-    assert any(tool["name"] == f"{tool_prefix}get_services" for tool in tools), "get_services tool not found!"
+    assert any(
+        tool["name"] == f"{tool_prefix}get_services" for tool in tools
+    ), "get_services tool not found!"
 
     # Call the tool to list services
-    response_json = call_function(function_name=f"{tool_prefix}get_services", parameters={}, env_key=env_key)
+    response_json = call_function(
+        function_name=f"{tool_prefix}get_services", parameters={}, env_key=env_key
+    )
     try:
         response = json.loads(response_json)
         if isinstance(response, dict) and "error" in response:
@@ -62,7 +72,9 @@ def test_render_services_list(reset_env_and_module):
                 assert False, "RENDER_API_KEY is invalid—please check your token."
             assert False, f"Render API returned an error: {response_json}"
         assert isinstance(response, list), f"Response is not a list: {response_json}"
-        assert len(response) > 0, "No services found—please ensure you have deployed services."
+        assert (
+            len(response) > 0
+        ), "No services found—please ensure you have deployed services."
         print(f"DEBUG: Found {len(response)} services.")
     except json.JSONDecodeError:
         assert False, f"Response is not valid JSON: {response_json}"

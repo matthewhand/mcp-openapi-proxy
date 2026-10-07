@@ -7,6 +7,7 @@ import json
 import pytest
 from mcp_openapi_proxy.server_fastmcp import list_functions
 
+
 @pytest.mark.integration
 def test_function_name_mapping(reset_env_and_module):
     """Test that function names are correctly generated from OpenAPI spec."""
@@ -23,6 +24,7 @@ def test_function_name_mapping(reset_env_and_module):
         name = tool["name"]
         # Only check HTTP method prefix for tools with a method (skip built-ins like list_resources)
         if tool.get("method"):
-            assert name.startswith(("get_", "post_", "put_", "delete_")), \
-                f"Function name {name} should start with HTTP method prefix"
+            assert name.startswith(
+                ("get_", "post_", "put_", "delete_")
+            ), f"Function name {name} should start with HTTP method prefix"
         assert " " not in name, f"Function name {name} should have no spaces"

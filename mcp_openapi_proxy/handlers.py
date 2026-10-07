@@ -42,7 +42,9 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
     global openapi_spec_data
     try:
         function_name = request.params.name
-        logger.debug(f"Dispatcher received CallToolRequest for function: {function_name}")
+        logger.debug(
+            f"Dispatcher received CallToolRequest for function: {function_name}"
+        )
         api_key = os.getenv("API_KEY")
         logger.debug(f"API_KEY: {api_key[:5] + '...' if api_key else '<not set>'}")
         logger.debug(f"STRIP_PARAM: {os.getenv('STRIP_PARAM', '<not set>')}")
@@ -50,7 +52,9 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
         if not tool:
             logger.error(f"Unknown function requested: {function_name}")
             result = types.CallToolResult(
-                content=[types.TextContent(type="text", text="Unknown function requested")],
+                content=[
+                    types.TextContent(type="text", text="Unknown function requested")
+                ],
                 isError=False,
             )
             return result
@@ -59,15 +63,24 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
 
         if openapi_spec_data is None:
             result = types.CallToolResult(
-                content=[types.TextContent(type="text", text="OpenAPI spec not loaded")],
+                content=[
+                    types.TextContent(type="text", text="OpenAPI spec not loaded")
+                ],
                 isError=True,
             )
             return result
         operation_details = lookup_operation_details(function_name, openapi_spec_data)
         if not operation_details:
-            logger.error(f"Could not find OpenAPI operation for function: {function_name}")
+            logger.error(
+                f"Could not find OpenAPI operation for function: {function_name}"
+            )
             result = types.CallToolResult(
-                content=[types.TextContent(type="text", text=f"Could not find OpenAPI operation for function: {function_name}")],
+                content=[
+                    types.TextContent(
+                        type="text",
+                        text=f"Could not find OpenAPI operation for function: {function_name}",
+                    )
+                ],
                 isError=False,
             )
             return result
@@ -97,16 +110,25 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
         except KeyError as e:
             logger.error(f"Missing parameter for substitution: {e}")
             result = types.CallToolResult(
-                content=[types.TextContent(type="text", text=f"Missing parameter: {e}")],
+                content=[
+                    types.TextContent(type="text", text=f"Missing parameter: {e}")
+                ],
                 isError=False,
             )
             return result
 
         base_url = build_base_url(openapi_spec_data)
         if not base_url:
-            logger.critical("Failed to construct base URL from spec or SERVER_URL_OVERRIDE.")
+            logger.critical(
+                "Failed to construct base URL from spec or SERVER_URL_OVERRIDE."
+            )
             result = types.CallToolResult(
-                content=[types.TextContent(type="text", text="No base URL defined in spec or SERVER_URL_OVERRIDE")],
+                content=[
+                    types.TextContent(
+                        type="text",
+                        text="No base URL defined in spec or SERVER_URL_OVERRIDE",
+                    )
+                ],
                 isError=False,
             )
             return result
@@ -116,22 +138,35 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
         request_body = None
         if isinstance(parameters, dict):
             merged_params = []
-            path_item = openapi_spec_data.get("paths", {}).get(operation_details["original_path"], {})
+            path_item = openapi_spec_data.get("paths", {}).get(
+                operation_details["original_path"], {}
+            )
             if isinstance(path_item, dict) and "parameters" in path_item:
                 merged_params.extend(path_item["parameters"])
             if "parameters" in operation:
                 merged_params.extend(operation["parameters"])
-            path_params_in_openapi = [param["name"] for param in merged_params if param.get("in") == "path"]
+            path_params_in_openapi = [
+                param["name"] for param in merged_params if param.get("in") == "path"
+            ]
             if path_params_in_openapi:
                 missing_required = [
                     param["name"]
                     for param in merged_params
-                    if param.get("in") == "path" and param.get("required", False) and param["name"] not in arguments
+                    if param.get("in") == "path"
+                    and param.get("required", False)
+                    and param["name"] not in arguments
                 ]
                 if missing_required:
-                    logger.error(f"Missing required path parameters: {missing_required}")
+                    logger.error(
+                        f"Missing required path parameters: {missing_required}"
+                    )
                     result = types.CallToolResult(
-                        content=[types.TextContent(type="text", text=f"Missing required path parameters: {missing_required}")],
+                        content=[
+                            types.TextContent(
+                                type="text",
+                                text=f"Missing required path parameters: {missing_required}",
+                            )
+                        ],
                         isError=False,
                     )
                     return result
@@ -148,9 +183,15 @@ async def dispatcher_handler(request: types.CallToolRequest) -> Any:
         logger.debug(f"Request Body: {request_body}")
 
         try:
-            ignore_ssl_tools = os.getenv("IGNORE_SSL_TOOLS", "false").lower() in ("true", "1", "yes")
+            ignore_ssl_tools = os.getenv("IGNORE_SSL_TOOLS", "false").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
             verify_ssl_tools = not ignore_ssl_tools
-            logger.debug(f"Sending API request with SSL verification: {verify_ssl_tools} (IGNORE_SSL_TOOLS={ignore_ssl_tools})")
+            logger.debug(
+                f"Sending API request with SSL verification: {verify_ssl_tools} (IGNORE_SSL_TOOLS={ignore_ssl_tools})"
+            )
             response = requests.request(
                 method=method,
                 url=api_url,
@@ -257,7 +298,7 @@ async def read_resource(request: types.ReadResourceRequest) -> Any:
                 types.TextResourceContents(
                     text=spec_json,
                     uri=AnyUrl("file:///openapi_spec.json"),
-                    mimeType="application/json"
+                    mimeType="application/json",
                 )
             ]
         )
@@ -299,9 +340,7 @@ async def get_prompt(request: types.GetPromptRequest) -> Any:
         )
         return result
     try:
-        default_text = (
-            "This OpenAPI spec defines endpoints, parameters, and responses—a blueprint for developers to integrate effectively."
-        )
+        default_text = "This OpenAPI spec defines endpoints, parameters, and responses—a blueprint for developers to integrate effectively."
         result = types.GetPromptResult(
             messages=[
                 types.PromptMessage(
@@ -317,7 +356,9 @@ async def get_prompt(request: types.GetPromptRequest) -> Any:
             messages=[
                 types.PromptMessage(
                     role="assistant",
-                    content=types.TextContent(type="text", text=f"Prompt error: {str(e)}"),
+                    content=types.TextContent(
+                        type="text", text=f"Prompt error: {str(e)}"
+                    ),
                 )
             ]
         )

@@ -1,8 +1,14 @@
 # mcp-openapi-proxy
 
+[![OpenAPI URL Validation](https://github.com/matthewhand/mcp-openapi-proxy/actions/workflows/validate_openapi_urls.yml/badge.svg)](https://github.com/matthewhand/mcp-openapi-proxy/actions/workflows/validate_openapi_urls.yml)
+[![Diagnose Example Configs](https://github.com/matthewhand/mcp-openapi-proxy/actions/workflows/diagnose_examples.yml/badge.svg)](https://github.com/matthewhand/mcp-openapi-proxy/actions/workflows/diagnose_examples.yml)
+
 **mcp-openapi-proxy** is a Python package that implements a Model Context Protocol (MCP) server, designed to dynamically expose REST APIs—defined by OpenAPI specifications—as MCP tools. This facilitates seamless integration of OpenAPI-described APIs into MCP-based workflows.
 
 ## Table of Contents
+
+- [Contributing](CONTRIBUTING.md)
+- [FAQ](FAQ.md)
 
 - [Overview](#overview)
 - [Features](#features)
@@ -26,6 +32,11 @@
   - [Box API Example](#box-api-example)
   - [WolframAlpha API Example](#wolframalpha-api-example)
 - [Troubleshooting](#troubleshooting)
+- [FAQ](#faq)
+- [Security](#security)
+- [Code of Conduct](#code-of-conduct)
+- [Support](#support)
+- [Changelog](#changelog)
 - [License](#license)
 
 ## Overview
@@ -107,6 +118,49 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `IGNORE_SSL_TOOLS`: (Optional) Set to `true` to disable SSL certificate verification for API requests made by tools.
 
 ## Examples
+
+## OpenAPI Spec URL Validation
+
+> **Troubleshooting?** See the [FAQ](FAQ.md) for help with diagnostics output, missing environment variables, and common validation issues.
+
+### Advanced Diagnostics: diagnose_examples.py
+
+#### CI Integration
+
+The `diagnose_examples.py` script is also run automatically in CI (see badge above) on every push and pull request to `main`. This ensures:
+- All example configs are deeply validated for missing env vars, unreachable specs, and parse errors.
+- Contributors receive early feedback on config issues, not just URL reachability.
+
+For deeper inspection of your example configs, use the `scripts/diagnose_examples.py` script. This tool:
+- Checks for missing required environment variables in each config.
+- Attempts to fetch and parse each OpenAPI spec, reporting HTTP status and parse results.
+- Produces a detailed report per config/server, including missing env vars and spec fetch status.
+
+**Usage:**
+
+```bash
+python3 scripts/diagnose_examples.py
+```
+
+This is useful for debugging, onboarding, or auditing new configs. It complements the fast CI validation script with more comprehensive diagnostics.
+
+> **Note:** The `WIP-jellyfin-claude_desktop_config.json` example references the Jellyfin public demo, which is known to return a 404 for its OpenAPI spec. This config is for demonstration only and does not affect CI or production validation.
+
+A script is provided to validate all OpenAPI spec URLs in the example configs:
+
+```bash
+python3 scripts/validate_openapi_urls.py
+```
+
+This will check each URL with `curl -I` and print a summary. If any URLs are unreachable or return non-200 status, the script exits nonzero (suitable for CI integration).
+
+### Runtime OpenAPI Spec URL Validation
+
+When the proxy/server loads an OpenAPI spec from a remote URL, it first validates the URL using `curl -I`. If the URL is not reachable (non-200), the spec will not be fetched and an error is logged. This ensures robust, production-grade validation for all OpenAPI specs loaded at runtime.
+
+### CI Integration
+
+OpenAPI URL validation is enforced on every push and pull request to the `main` branch using GitHub Actions. The workflow is defined in `.github/workflows/validate_openapi_urls.yml` and will fail if any spec URL is unreachable.
 
 For testing you can run the uvx command as demonstrated in the examples then interact with the MCP server via JSON-RPC messages to list tools and resources. See the "JSON-RPC Testing" section below.
 
@@ -668,6 +722,22 @@ Then paste these follow-up messages:
 ```bash
 uvx mcp-openapi-proxy
 ```
+
+## Security
+
+See the [SECURITY.md](SECURITY.md) policy for how to report vulnerabilities and best practices for contributors and users.
+
+## Code of Conduct
+
+Participation in this project is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). All contributors and community members are expected to uphold these standards.
+
+## Support
+
+For help, troubleshooting, or to connect with the community, see the [SUPPORT.md](SUPPORT.md) guide.
+
+## Changelog
+
+See the [CHANGELOG.md](CHANGELOG.md) for release history and project updates.
 
 ## License
 

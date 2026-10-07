@@ -2,15 +2,20 @@ import os
 import pytest
 import requests
 
+
 @pytest.mark.integration
 class TestNetboxIntegration:
     @classmethod
     def setup_class(cls):
-        # Only run tests if NETBOX_API_KEY is set
+        # Only run tests if NETBOX_API_KEY and SERVER_URL_OVERRIDE are set and not placeholders
         cls.token = os.environ.get("NETBOX_API_KEY")
-        if not cls.token:
-            pytest.skip("No NETBOX_API_KEY set in environment.")
-        cls.base_url = os.environ.get("SERVER_URL_OVERRIDE", "http://localhost:8000/api")
+        cls.base_url = os.environ.get(
+            "SERVER_URL_OVERRIDE", "http://localhost:8000/api"
+        )
+        if not cls.token or "your_key" in cls.token.lower():
+            pytest.skip("No valid NETBOX_API_KEY set in environment.")
+        if not cls.base_url or "localhost" in cls.base_url:
+            pytest.skip("No valid SERVER_URL_OVERRIDE set for Netbox integration.")
         cls.headers = {"Authorization": f"Token {cls.token}"}
 
     def test_devices_list(self):

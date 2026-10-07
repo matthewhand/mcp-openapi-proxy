@@ -5,8 +5,10 @@ These tests will cover fetching OpenAPI specs, tool registration, etc.
 
 import os
 import unittest
+
 # from mcp_any_openapi.server_lowlevel import run_server # If needed for full integration tests
 # from mcp import types # If needing MCP types for requests/responses
+
 
 class OpenApiIntegrationTests(unittest.TestCase):
     """
@@ -28,6 +30,7 @@ class OpenApiIntegrationTests(unittest.TestCase):
         self.assertTrue(True, "Tool registration from OpenAPI test placeholder")
 
     # Add more integration test methods as needed
+
 
 if __name__ == "__main__":
     unittest.main()

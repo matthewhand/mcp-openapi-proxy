@@ -4,7 +4,10 @@ import requests
 
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
-@pytest.mark.skipif(not ELEVENLABS_API_KEY, reason="No ELEVENLABS_API_KEY set in environment.")
+
+@pytest.mark.skipif(
+    not ELEVENLABS_API_KEY, reason="No ELEVENLABS_API_KEY set in environment."
+)
 def test_elevenlabs_get_voices():
     """
     Test the ElevenLabs /v1/voices endpoint to list available voices.

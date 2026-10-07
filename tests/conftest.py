@@ -1,7 +1,8 @@
 import os
 import pytest
 import sys
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if repo_root not in sys.path:
     sys.path.insert(0, repo_root)
 import hashlib
@@ -9,6 +10,7 @@ from dotenv import load_dotenv
 
 # Load .env once at module level
 load_dotenv()
+
 
 @pytest.fixture(scope="function", autouse=True)
 def reset_env_and_module(request):
@@ -22,9 +24,10 @@ def reset_env_and_module(request):
             del os.environ[key]
     os.environ["DEBUG"] = "true"
     # Reload server_fastmcp to reset tools implicitly
-    if 'mcp_openapi_proxy.server_fastmcp' in sys.modules:
-        del sys.modules['mcp_openapi_proxy.server_fastmcp']
+    if "mcp_openapi_proxy.server_fastmcp" in sys.modules:
+        del sys.modules["mcp_openapi_proxy.server_fastmcp"]
     import mcp_openapi_proxy.server_fastmcp  # Fresh import re-registers tools
+
     yield env_key
     # Restore original env
     os.environ.clear()

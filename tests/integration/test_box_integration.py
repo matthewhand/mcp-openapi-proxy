@@ -4,22 +4,33 @@ import requests
 
 BOX_API_KEY = os.getenv("BOX_API_KEY")
 
-@pytest.mark.skipif(not BOX_API_KEY, reason="No BOX_API_KEY set in environment.")
+skip_box = not BOX_API_KEY or "your_key" in BOX_API_KEY.lower()
+
+
+def _skip_if_unauthorized(resp):
+    if resp.status_code == 401:
+        pytest.skip("Box API key is set but unauthorized (401). Skipping test.")
+
+
+@pytest.mark.skipif(skip_box, reason="No valid BOX_API_KEY set in environment.")
 def test_box_get_folder_info():
     folder_id = "0"  # Root folder
     headers = {"Authorization": f"Bearer {BOX_API_KEY}"}
     resp = requests.get(f"https://api.box.com/2.0/folders/{folder_id}", headers=headers)
+    _skip_if_unauthorized(resp)
     assert resp.status_code == 200
     data = resp.json()
     assert "id" in data and data["id"] == folder_id
     assert "name" in data
     assert data["type"] == "folder"
 
-@pytest.mark.skipif(not BOX_API_KEY, reason="No BOX_API_KEY set in environment.")
+
+@pytest.mark.skipif(skip_box, reason="No valid BOX_API_KEY set in environment.")
 def test_box_list_files_and_folders():
     folder_id = "0"  # Root folder
     headers = {"Authorization": f"Bearer {BOX_API_KEY}"}
     resp = requests.get(f"https://api.box.com/2.0/folders/{folder_id}", headers=headers)
+    _skip_if_unauthorized(resp)
     assert resp.status_code == 200
     data = resp.json()
     assert "item_collection" in data

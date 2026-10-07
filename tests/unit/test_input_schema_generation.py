@@ -3,11 +3,13 @@ from mcp_openapi_proxy.openapi import register_functions
 from mcp_openapi_proxy.server_lowlevel import tools
 from mcp_openapi_proxy.utils import normalize_tool_name
 
+
 class TestInputSchemaGeneration(unittest.TestCase):
     def setUp(self):
         # Stash any existing TOOL_WHITELIST and set it to empty to allow all endpoints
         import os
         import mcp_openapi_proxy.utils as utils
+
         self.old_tool_whitelist = os.environ.pop("TOOL_WHITELIST", None)
         tools.clear()
         # Patch is_tool_whitelisted to always return True to bypass whitelist filtering in tests
@@ -21,25 +23,39 @@ class TestInputSchemaGeneration(unittest.TestCase):
                     "get": {
                         "summary": "Get repo contents",
                         "parameters": [
-                            {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}, "description": "Owner name"},
-                            {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}, "description": "Repository name"},
-                            {"name": "filter", "in": "query", "required": False, "schema": {"type": "string"}, "description": "Filter value"}
+                            {
+                                "name": "owner",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                                "description": "Owner name",
+                            },
+                            {
+                                "name": "repo",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                                "description": "Repository name",
+                            },
+                            {
+                                "name": "filter",
+                                "in": "query",
+                                "required": False,
+                                "schema": {"type": "string"},
+                                "description": "Filter value",
+                            },
                         ],
-                        "responses": {
-                            "200": {
-                                "description": "OK"
-                            }
-                        }
+                        "responses": {"200": {"description": "OK"}},
                     }
                 }
-            }
+            },
         }
         register_functions(self.dummy_spec)
-
 
     def tearDown(self):
         import os
         import mcp_openapi_proxy.utils as utils
+
         # Restore TOOL_WHITELIST
         if self.old_tool_whitelist is not None:
             os.environ["TOOL_WHITELIST"] = self.old_tool_whitelist
@@ -58,7 +74,7 @@ class TestInputSchemaGeneration(unittest.TestCase):
         expected_properties = {
             "owner": {"type": "string", "description": "Owner name"},
             "repo": {"type": "string", "description": "Repository name"},
-            "filter": {"type": "string", "description": "Filter value"}
+            "filter": {"type": "string", "description": "Filter value"},
         }
 
         self.assertEqual(input_schema["type"], "object")
@@ -66,6 +82,7 @@ class TestInputSchemaGeneration(unittest.TestCase):
         self.assertEqual(input_schema["properties"], expected_properties)
         # Only "owner" and "repo" are required
         self.assertCountEqual(input_schema["required"], ["owner", "repo"])
+
 
 if __name__ == "__main__":
     unittest.main()

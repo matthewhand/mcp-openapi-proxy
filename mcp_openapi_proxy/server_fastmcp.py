@@ -19,7 +19,12 @@ from mcp import types
 from mcp.server.fastmcp import FastMCP
 from mcp_openapi_proxy.logging_setup import logger
 from mcp_openapi_proxy.openapi import fetch_openapi_spec, build_base_url, handle_auth
-from mcp_openapi_proxy.utils import is_tool_whitelisted, normalize_tool_name, strip_parameters, get_additional_headers
+from mcp_openapi_proxy.utils import (
+    is_tool_whitelisted,
+    normalize_tool_name,
+    strip_parameters,
+    get_additional_headers,
+)
 import sys
 
 # Logger is now configured in logging_setup.py, just use it
@@ -31,12 +36,13 @@ mcp = FastMCP("OpenApiProxy-Fast")
 
 spec = None  # Global spec for resources
 
+
 @mcp.tool()
 def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
     """Lists available functions derived from the OpenAPI specification."""
     logger.debug("Executing list_functions tool.")
     spec_url = os.environ.get(env_key, os.environ.get("OPENAPI_SPEC_URL"))
-    whitelist = os.getenv('TOOL_WHITELIST')
+    whitelist = os.getenv("TOOL_WHITELIST")
     logger.debug(f"Using spec_url: {spec_url}")
     logger.debug(f"TOOL_WHITELIST value: {whitelist}")
     if not spec_url:
@@ -60,12 +66,12 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                                 "name": "user_id",
                                 "in": "path",
                                 "required": True,
-                                "schema": {"type": "string"}
+                                "schema": {"type": "string"},
                             }
-                        ]
+                        ],
                     }
                 }
-            }
+            },
         }
     logger.debug(f"Raw spec loaded: {json.dumps(spec, indent=2, default=str)}")
     paths = spec.get("paths", {})
@@ -79,9 +85,11 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         if not path_item:
             logger.debug(f"Path item is empty for {path}")
             continue
-        whitelist_env = os.getenv('TOOL_WHITELIST', '').strip()
+        whitelist_env = os.getenv("TOOL_WHITELIST", "").strip()
         whitelist_check = is_tool_whitelisted(path)
-        logger.debug(f"Whitelist check for {path}: {whitelist_check} with TOOL_WHITELIST: '{whitelist_env}'")
+        logger.debug(
+            f"Whitelist check for {path}: {whitelist_check} with TOOL_WHITELIST: '{whitelist_env}'"
+        )
         if whitelist_env and not whitelist_check:
             logger.debug(f"Path {path} not in whitelist - skipping.")
             continue
@@ -98,21 +106,29 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
             if function_name in functions:
                 logger.debug(f"Skipping duplicate function name: {function_name}")
                 continue
-            function_description = operation.get("summary", operation.get("description", "No description provided."))
-            logger.debug(f"Registering function: {function_name} - {function_description}")
+            function_description = operation.get(
+                "summary", operation.get("description", "No description provided.")
+            )
+            logger.debug(
+                f"Registering function: {function_name} - {function_description}"
+            )
             input_schema = {
                 "type": "object",
                 "properties": {},
                 "required": [],
-                "additionalProperties": False
+                "additionalProperties": False,
             }
-            placeholder_params = [part.strip('{}') for part in path.split('/') if '{' in part and '}' in part]
+            placeholder_params = [
+                part.strip("{}")
+                for part in path.split("/")
+                if "{" in part and "}" in part
+            ]
             for param_name in placeholder_params:
-                input_schema['properties'][param_name] = {
+                input_schema["properties"][param_name] = {
                     "type": "string",
-                    "description": f"Path parameter {param_name}"
+                    "description": f"Path parameter {param_name}",
                 }
-                input_schema['required'].append(param_name)
+                input_schema["required"].append(param_name)
             for param in operation.get("parameters", []):
                 param_name = param.get("name")
                 param_type = param.get("type", "string")
@@ -120,9 +136,15 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                     param_type = "string"
                 input_schema["properties"][param_name] = {
                     "type": param_type,
-                    "description": param.get("description", f"{param.get('in', 'unknown')} parameter {param_name}")
+                    "description": param.get(
+                        "description",
+                        f"{param.get('in', 'unknown')} parameter {param_name}",
+                    ),
                 }
-                if param.get("required", False) and param_name not in input_schema['required']:
+                if (
+                    param.get("required", False)
+                    and param_name not in input_schema["required"]
+                ):
                     input_schema["required"].append(param_name)
             functions[function_name] = {
                 "name": function_name,
@@ -131,7 +153,7 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                 "method": method.upper(),
                 "operationId": operation.get("operationId"),
                 "original_name": raw_name,
-                "inputSchema": input_schema
+                "inputSchema": input_schema,
             }
     functions["list_resources"] = {
         "name": "list_resources",
@@ -140,7 +162,12 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         "method": None,
         "operationId": None,
         "original_name": "list_resources",
-        "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
     }
     functions["read_resource"] = {
         "name": "read_resource",
@@ -149,7 +176,12 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         "method": None,
         "operationId": None,
         "original_name": "read_resource",
-        "inputSchema": {"type": "object", "properties": {"uri": {"type": "string", "description": "Resource URI"}}, "required": ["uri"], "additionalProperties": False}
+        "inputSchema": {
+            "type": "object",
+            "properties": {"uri": {"type": "string", "description": "Resource URI"}},
+            "required": ["uri"],
+            "additionalProperties": False,
+        },
     }
     functions["list_prompts"] = {
         "name": "list_prompts",
@@ -158,7 +190,12 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         "method": None,
         "operationId": None,
         "original_name": "list_prompts",
-        "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
     }
     functions["get_prompt"] = {
         "name": "get_prompt",
@@ -167,9 +204,16 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
         "method": None,
         "operationId": None,
         "original_name": "get_prompt",
-        "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "description": "Prompt name"}}, "required": ["name"], "additionalProperties": False}
+        "inputSchema": {
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "Prompt name"}},
+            "required": ["name"],
+            "additionalProperties": False,
+        },
     }
-    logger.debug(f"Discovered {len(functions)} functions from the OpenAPI specification.")
+    logger.debug(
+        f"Discovered {len(functions)} functions from the OpenAPI specification."
+    )
     if "get_tasks_id" not in functions:
         functions["get_tasks_id"] = {
             "name": "get_tasks_id",
@@ -183,22 +227,32 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL") -> str:
                 "properties": {
                     "user_id": {
                         "type": "string",
-                        "description": "Path parameter user_id"
+                        "description": "Path parameter user_id",
                     }
                 },
                 "required": ["user_id"],
-                "additionalProperties": False
-            }
+                "additionalProperties": False,
+            },
         }
         logger.debug("Forced registration of get_tasks_id for testing.")
     logger.debug(f"Functions list: {list(functions.values())}")
     return json.dumps(list(functions.values()), indent=2)
 
+
 @mcp.tool()
-def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_key: str = "OPENAPI_SPEC_URL") -> str:
+def call_function(
+    *,
+    function_name: str,
+    parameters: Optional[Dict] = None,
+    env_key: str = "OPENAPI_SPEC_URL",
+) -> str:
     """Calls a function derived from the OpenAPI specification."""
-    logger.debug(f"call_function invoked with function_name='{function_name}' and parameters={parameters}")
-    logger.debug(f"API_KEY: {os.getenv('API_KEY', '<not set>')[:5] + '...' if os.getenv('API_KEY') else '<not set>'}")
+    logger.debug(
+        f"call_function invoked with function_name='{function_name}' and parameters={parameters}"
+    )
+    logger.debug(
+        f"API_KEY: {os.getenv('API_KEY', '<not set>')[:5] + '...' if os.getenv('API_KEY') else '<not set>'}"
+    )
     logger.debug(f"STRIP_PARAM: {os.getenv('STRIP_PARAM', '<not set>')}")
     if not function_name:
         logger.error("function_name is empty or None")
@@ -209,7 +263,15 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
         return json.dumps({"error": "OPENAPI_SPEC_URL is not configured"})
     global spec
     if function_name == "list_resources":
-        return json.dumps([{"name": "spec_file", "uri": "file:///openapi_spec.json", "description": "The raw OpenAPI specification JSON"}])
+        return json.dumps(
+            [
+                {
+                    "name": "spec_file",
+                    "uri": "file:///openapi_spec.json",
+                    "description": "The raw OpenAPI specification JSON",
+                }
+            ]
+        )
     if function_name == "read_resource":
         if not parameters or "uri" not in parameters:
             return json.dumps({"error": "uri parameter required"})
@@ -224,22 +286,42 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
             return json.dumps({"error": "Failed to fetch OpenAPI spec"})
         return json.dumps(spec_local, indent=2)
     if function_name == "list_prompts":
-        return json.dumps([{"name": "summarize_spec", "description": "Summarizes the purpose of the OpenAPI specification", "arguments": []}])
+        return json.dumps(
+            [
+                {
+                    "name": "summarize_spec",
+                    "description": "Summarizes the purpose of the OpenAPI specification",
+                    "arguments": [],
+                }
+            ]
+        )
     if function_name == "get_prompt":
         if not parameters or "name" not in parameters:
             return json.dumps({"error": "name parameter required"})
         if parameters["name"] != "summarize_spec":
             return json.dumps({"error": "Prompt not found"})
-        return json.dumps([{"role": "assistant", "content": {"type": "text", "text": "This OpenAPI spec defines an API’s endpoints, parameters, and responses, making it a blueprint for devs to build and integrate stuff without messing it up."}}])
+        return json.dumps(
+            [
+                {
+                    "role": "assistant",
+                    "content": {
+                        "type": "text",
+                        "text": "This OpenAPI spec defines an API’s endpoints, parameters, and responses, making it a blueprint for devs to build and integrate stuff without messing it up.",
+                    },
+                }
+            ]
+        )
     spec = fetch_openapi_spec(spec_url)
     if spec is None:
         logger.error("Spec is None for call_function")
-        return json.dumps({"error": "Failed to fetch or parse the OpenAPI specification"})
+        return json.dumps(
+            {"error": "Failed to fetch or parse the OpenAPI specification"}
+        )
     logger.debug(f"Spec keys for call_function: {list(spec.keys())}")
     function_def = None
     paths = spec.get("paths", {})
     logger.debug(f"Paths for function lookup: {list(paths.keys())}")
-    
+
     for path, path_item in paths.items():
         logger.debug(f"Checking path: {path}")
         for method, operation in path_item.items():
@@ -254,9 +336,11 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
                 function_def = {
                     "path": path,
                     "method": method.upper(),
-                    "operation": operation
+                    "operation": operation,
                 }
-                logger.debug(f"Matched function definition for '{function_name}': {function_def}")
+                logger.debug(
+                    f"Matched function definition for '{function_name}': {function_def}"
+                )
                 break
         if function_def:
             break
@@ -269,10 +353,12 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
                 "sha256": "dummy_sha256",
                 "resource": (parameters or {}).get("resource", ""),
                 "permalink": "http://www.virustotal.com/report/dummy",
-                "scans": {}
+                "scans": {},
             }
             return json.dumps(simulated_response)
-        logger.error(f"Function '{function_name}' not found in the OpenAPI specification.")
+        logger.error(
+            f"Function '{function_name}' not found in the OpenAPI specification."
+        )
         return json.dumps({"error": f"Function '{function_name}' not found"})
     logger.debug(f"Function def found: {function_def}")
 
@@ -290,28 +376,39 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
 
     if not is_tool_whitelisted(function_def["path"]):
         logger.error(f"Access to function '{function_name}' is not allowed.")
-        return json.dumps({"error": f"Access to function '{function_name}' is not allowed"})
+        return json.dumps(
+            {"error": f"Access to function '{function_name}' is not allowed"}
+        )
 
     base_url = build_base_url(spec)
     if not base_url:
         logger.error("Failed to construct base URL from spec or SERVER_URL_OVERRIDE.")
-        return json.dumps({"error": "No base URL defined in spec or SERVER_URL_OVERRIDE"})
+        return json.dumps(
+            {"error": "No base URL defined in spec or SERVER_URL_OVERRIDE"}
+        )
 
     path = function_def["path"]
     # Check required path params before substitution
     path_params_in_openapi = [
-        param["name"] for param in operation.get("parameters", []) if param.get("in") == "path"
+        param["name"]
+        for param in operation.get("parameters", [])
+        if param.get("in") == "path"
     ]
     if path_params_in_openapi:
         missing_required = [
-            param["name"] for param in operation.get("parameters", [])
-            if param.get("in") == "path" and param.get("required", False) and param["name"] not in parameters
+            param["name"]
+            for param in operation.get("parameters", [])
+            if param.get("in") == "path"
+            and param.get("required", False)
+            and param["name"] not in parameters
         ]
         if missing_required:
             logger.error(f"Missing required path parameters: {missing_required}")
-            return json.dumps({"error": f"Missing required path parameters: {missing_required}"})
+            return json.dumps(
+                {"error": f"Missing required path parameters: {missing_required}"}
+            )
 
-    if '{' in path and '}' in path:
+    if "{" in path and "}" in path:
         params_to_remove = []
         logger.debug(f"Before substitution - Path: {path}, Parameters: {parameters}")
         for param_name, param_value in parameters.items():
@@ -339,19 +436,27 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
         parameters = {}
         logger.debug("No valid parameters provided, proceeding without params/body")
 
-    logger.debug(f"Sending request - Method: {function_def['method']}, URL: {api_url}, Headers: {headers}, Params: {request_params}, Body: {request_body}")
+    logger.debug(
+        f"Sending request - Method: {function_def['method']}, URL: {api_url}, Headers: {headers}, Params: {request_params}, Body: {request_body}"
+    )
     try:
         # Add SSL verification control for API calls using IGNORE_SSL_TOOLS
-        ignore_ssl_tools = os.getenv("IGNORE_SSL_TOOLS", "false").lower() in ("true", "1", "yes")
+        ignore_ssl_tools = os.getenv("IGNORE_SSL_TOOLS", "false").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
         verify_ssl_tools = not ignore_ssl_tools
-        logger.debug(f"Sending API request with SSL verification: {verify_ssl_tools} (IGNORE_SSL_TOOLS={ignore_ssl_tools})")
+        logger.debug(
+            f"Sending API request with SSL verification: {verify_ssl_tools} (IGNORE_SSL_TOOLS={ignore_ssl_tools})"
+        )
         response = requests.request(
             method=function_def["method"],
             url=api_url,
             headers=headers,
             params=request_params if function_def["method"] == "GET" else None,
             json=request_body if function_def["method"] != "GET" else None,
-            verify=verify_ssl_tools
+            verify=verify_ssl_tools,
         )
         response.raise_for_status()
         logger.debug(f"API response received: {response.text}")
@@ -360,12 +465,15 @@ def call_function(*, function_name: str, parameters: Optional[Dict] = None, env_
         logger.error(f"API request failed: {e}", exc_info=True)
         return json.dumps({"error": f"API request failed: {e}"})
 
+
 def run_simple_server():
     """Runs the FastMCP server."""
     logger.debug("Starting run_simple_server")
     spec_url = os.environ.get("OPENAPI_SPEC_URL")
     if not spec_url:
-        logger.error("OPENAPI_SPEC_URL environment variable is required for FastMCP mode.")
+        logger.error(
+            "OPENAPI_SPEC_URL environment variable is required for FastMCP mode."
+        )
         sys.exit(1)
     assert isinstance(spec_url, str)
 
@@ -383,6 +491,7 @@ def run_simple_server():
     except Exception as e:
         logger.error(f"Unhandled exception in MCP server (FastMCP): {e}", exc_info=True)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     run_simple_server()

@@ -1,5 +1,6 @@
 import requests
 
+
 def test_jellyfin_public_system_info():
     resp = requests.get("https://demo.jellyfin.org/stable/System/Info/Public")
     assert resp.status_code == 200

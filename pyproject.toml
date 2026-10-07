@@ -15,7 +15,7 @@ dependencies = [
   "mcp[cli]>=1.2.0",
   "python-dotenv>=1.0.1",
   "requests>=2.25.0",
-  "fastapi>=0.100.0", # For OpenAPI parsing utils if used later, and data validation
+  "fastapi>=0.100.0",
   "pydantic>=2.0",
   "prance>=23.6.21.0",
   "openapi-spec-validator>=0.7.1",
@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mcp-openapi-proxy = "mcp_openapi_proxy:main"  # Correct entry pointing to __init__.py:main
+mcp-openapi-proxy = "mcp_openapi_proxy:main"
 
 [project.optional-dependencies]
 dev = [
@@ -38,5 +38,12 @@ markers = [
 ]
 asyncio_default_fixture_loop_scope = "function"
 
-[tool.setuptools.packages]
-find = {include = ["mcp_openapi_proxy", "mcp_openapi_proxy.*"]}
+[tool.black]
+line-length = 100
+skip-string-normalization = false
+skip-magic-trailing-comma = false
+
+[tool.flake8]
+max-line-length = 120
+exclude = ".git,__pycache__,.venv,venv,build,dist,.eggs"
+extend-ignore = "E203, E266, E501, W503, F403, F401"

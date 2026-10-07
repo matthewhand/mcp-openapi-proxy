@@ -59,6 +59,22 @@ cover/
 *.log
 local_settings.py
 db.sqlite3
+
+# Environment variables and secrets
+.env
+.env.*
+.envrc
+*.secrets*
+
+# VSCode and editor settings
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
 db.sqlite3-journal
 
 # Flask stuff:
