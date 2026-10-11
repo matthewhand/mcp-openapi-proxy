@@ -35,6 +35,14 @@
   (`mcp rpc method=tools/list` or `mcp rpc method=tools/call name=…`) so
   uvicorn `POST /mcp 200` can be attributed. Arguments, Authorization,
   tokens, and request bodies are not logged. Stdio is unchanged.
+- `MCP_LOG_RAW_COMMANDS` (opt-in, default off) logs the verbatim shell command
+  for allow-listed execution tools as its own record — `mcp raw-command
+  tool=post_command_execute_shell` followed by the command on its own line(s) —
+  emitted from the tool dispatcher before the command runs. Byte-for-byte: no
+  normalisation, no redaction. Scoped to shell/command tools (override with
+  `MCP_LOG_RAW_COMMAND_TOOLS`); default logging and the `mcp rpc method=…`
+  format are unchanged. ⚠️ May write credentials into logs — that is why it is
+  opt-in.
 - MCP `annotations` on every OpenAPI-derived `tools/list` entry (`title`,
   `readOnlyHint` / `idempotentHint` for GET and clearly read-ish POST,
   `destructiveHint` for other methods). Hints are derived from the HTTP

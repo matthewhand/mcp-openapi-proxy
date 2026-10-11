@@ -151,6 +151,15 @@ Refer to the **Examples** section below for practical configurations tailored to
 - `MCP_LIST_TTL_MS` / `MCP_READ_TTL_MS`: (Optional) `ttlMs` for list results (default `60000`) and `resources/read` (default `5000`).
 - `MCP_ALLOWED_HOSTS`: (Optional) Comma-separated Host allow-list for DNS-rebinding protection. Default `*` (protection off — typical behind nginx).
 - `MCP_REQUEST_STATE_KEY`: (Optional) Shared HMAC key so MRTR `requestState` verifies across instances. Unset = process-local.
+- `MCP_LOG_RAW_COMMANDS`: (Optional, **default off**) `1`/`true`/`yes` adds one extra INFO record per shell-execution tool call, emitted *before* the command runs:
+
+  ```text
+  mcp raw-command tool=post_command_execute_shell
+  cd /srv/app && npm run build   # <- the verbatim command, unmodified
+  ```
+
+  The command is logged byte-for-byte — whitespace, blank lines, tabs and quoting are preserved; nothing is normalised, reconstructed, or redacted. The existing `mcp rpc method=… name=…` line is unchanged and still the only record when this is off. ⚠️ **This can write secrets into your logs**: shell commands routinely carry credentials (`export TOKEN=…`, `curl -H 'Authorization: Bearer …'`, `ssh`/`psql` invocations). It is opt-in for that reason — enable it only where the log sink is trusted, and scrub or rotate the log afterwards. Only the command body is dumped, never `Authorization` headers or unrelated tool arguments. Scoped to the allow-list below; not a general tool-argument dump.
+- `MCP_LOG_RAW_COMMAND_TOOLS`: (Optional) Comma-separated tool names eligible for raw-command logging, overriding the default `post_command_execute_shell,executeShell`. Entries that are not valid tool names are ignored. Use this when a new terminal-style upstream lands.
 
 ## Verified Clients & Live Results (2026-06-12)
 

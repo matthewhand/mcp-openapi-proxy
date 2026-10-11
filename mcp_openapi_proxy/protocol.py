@@ -205,6 +205,88 @@ def log_inbound_rpc(method: Optional[str], name: Optional[str] = None) -> Option
     return line
 
 
+# --- opt-in raw shell-command audit logging ---------------------------------
+#
+# MCP_LOG_RAW_COMMANDS=1 emits the verbatim command string of shell-execution
+# tools immediately before execution, as its own record:
+#
+#   mcp raw-command tool=post_command_execute_shell
+#   ls -la  # note: verbatim, unredacted, newlines preserved
+#
+# SECURITY: raw commands routinely embed credentials (export TOKEN=…, curl -H
+# 'Authorization: Bearer …', ssh keys). The payload is logged byte-for-byte on
+# purpose -- any redaction would defeat the audit trail -- so this stays opt-in
+# and off by default. Enable it only on log sinks you trust, and scrub/rotate
+# the resulting logs.
+RAW_COMMANDS_ENV = "MCP_LOG_RAW_COMMANDS"
+RAW_COMMAND_TOOLS_ENV = "MCP_LOG_RAW_COMMAND_TOOLS"
+
+# Shell/command execution tools this proxy knows about. Narrow on purpose: MCP
+# tool arguments are never dumped globally. Override with
+# MCP_LOG_RAW_COMMAND_TOOLS=name1,name2 when a new terminal upstream lands.
+DEFAULT_RAW_COMMAND_TOOLS = ("post_command_execute_shell", "executeShell")
+
+# Body property carrying the raw command string, in priority order. gpt-terminal
+# plus uses ``command``.
+RAW_COMMAND_ARG_KEYS = ("command", "cmd", "shell_command", "script", "command_line")
+
+
+def raw_command_logging_enabled() -> bool:
+    return truthy(RAW_COMMANDS_ENV)
+
+
+def raw_command_tools() -> frozenset:
+    """Allow-list of tool names eligible for raw-command logging."""
+    raw = os.getenv(RAW_COMMAND_TOOLS_ENV)
+    if raw is None or not raw.strip():
+        return frozenset(DEFAULT_RAW_COMMAND_TOOLS)
+    # Entries must look like tool names, not log text: keeps the record header
+    # single-line even when someone misconfigures the allow-list.
+    return frozenset(
+        token for token in (part.strip() for part in raw.split(",")) if _RPC_TOKEN_RE.fullmatch(token)
+    )
+
+
+def extract_raw_command(arguments: Any) -> Optional[str]:
+    """Return the raw command string from tool arguments, or None.
+
+    Only the first recognized command property is considered, and only when it
+    is a string. Missing arguments, non-mapping arguments, and non-string values
+    yield None rather than guessing or dumping the whole argument object.
+    """
+    if not isinstance(arguments, Mapping):
+        return None
+    for key in RAW_COMMAND_ARG_KEYS:
+        if key in arguments:
+            value = arguments[key]
+            return value if isinstance(value, str) else None
+    return None
+
+
+def format_raw_command_log_line(tool_name: Optional[str], command: Optional[str]) -> Optional[str]:
+    """Marker line plus the command verbatim on the following line(s).
+
+    The command is concatenated unmodified -- no stripping, no newline folding,
+    no redaction -- so whitespace, quoting, and blank lines survive round-trip.
+    """
+    token = _safe_rpc_token(tool_name)
+    if not token or not isinstance(command, str):
+        return None
+    return f"mcp raw-command tool={token}\n{command}"
+
+
+def log_raw_command(tool_name: Optional[str], arguments: Any) -> Optional[str]:
+    """Log the verbatim command for shell tools when opted in. No-op otherwise."""
+    if not raw_command_logging_enabled():
+        return None
+    if tool_name not in raw_command_tools():
+        return None
+    line = format_raw_command_log_line(tool_name, extract_raw_command(arguments))
+    if line:
+        logger.info(line)
+    return line
+
+
 class McpRpcLogMiddleware:
     """Raw ASGI wrapper: log inbound JSON-RPC method before StreamableHTTPSessionManager.
 
