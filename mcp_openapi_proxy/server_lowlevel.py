@@ -39,6 +39,7 @@ from mcp_openapi_proxy.protocol import (
     cache_hints,
     healthz_route,
     json_response,
+    log_raw_command,
     mcp_host,
     mcp_path,
     mcp_port,
@@ -203,6 +204,11 @@ async def dispatcher_handler(ctx_or_request: Any, params: Any = None) -> mcp_typ
             )
         arguments = params.arguments or {}
         logger.debug(f"Raw arguments before processing: {arguments}")
+        # Opt-in audit trail (MCP_LOG_RAW_COMMANDS): the verbatim shell command,
+        # emitted before it runs. Off by default; arguments are never logged
+        # otherwise. Deliberately placed before the spec lookup / upstream POST
+        # so the record covers commands that fail downstream too.
+        log_raw_command(function_name, arguments)
 
         if openapi_spec_data is None:
             return mcp_types.CallToolResult(
