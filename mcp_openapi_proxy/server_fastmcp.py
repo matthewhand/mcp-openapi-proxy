@@ -115,6 +115,36 @@ def _whimsical_blog_prompt() -> str:
             "✨ Write the next whimsical chapter.")
 
 
+def register_fastmcp_env_prompt(raw: Optional[str] = None) -> None:
+    """Register the PROMPT env prompt on the simple-mode server, if set.
+
+    Built-ins are registered first, and FastMCP keeps the first prompt of a
+    given name, so a colliding custom name is ignored here as well.
+    """
+    from mcp_openapi_proxy.prompt_env import BUILTIN_PROMPT_NAMES, parse_prompt_env
+
+    parsed = parse_prompt_env(raw)
+    if not parsed:
+        return
+    name = parsed["name"]
+    if name in BUILTIN_PROMPT_NAMES:
+        logger.error(f"PROMPT name {name!r} collides with a built-in prompt; ignoring")
+        return
+    description = parsed["description"]
+    messages = list(parsed["messages"])
+
+    def _env_prompt() -> str:
+        lines = [f"{item['role']}: {item['text']}" for item in messages]
+        return "\n".join(lines) if lines else description
+
+    _env_prompt.__doc__ = description
+    mcp.prompt(name=name, description=description)(_env_prompt)
+    logger.debug(f"Added dynamic FastMCP prompt from PROMPT: {name}")
+
+
+register_fastmcp_env_prompt()
+
+
 @mcp.tool(
     title="List Functions",
     annotations=mcp_types.ToolAnnotations(
