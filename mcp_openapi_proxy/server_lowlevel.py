@@ -147,7 +147,7 @@ def register_env_prompt(raw: Optional[str] = None) -> None:
         return
     name = parsed["name"]
     if name in BUILTIN_PROMPT_NAMES:
-        logger.error(f"PROMPT name {name!r} collides with a built-in prompt; ignoring")
+        logger.error("Custom PROMPT uses a reserved built-in name; ignoring")
         return
     prompts[:] = [p for p in prompts if p.name != name]
     prompts.append(
@@ -169,7 +169,7 @@ def register_env_prompt(raw: Optional[str] = None) -> None:
         return list(stored)
 
     PROMPT_TEMPLATES[name] = _messages
-    logger.debug(f"Added dynamic prompt from PROMPT: {name}")
+    logger.debug("Registered custom low-level MCP prompt")
 
 
 register_env_prompt()
@@ -463,10 +463,10 @@ async def list_prompts(ctx_or_request: Any = None, params: Any = None) -> mcp_ty
 async def get_prompt(ctx_or_request: Any, params: Any = None) -> mcp_types.GetPromptResult:
     _, params = unpack_handler_args(ctx_or_request, params)
     name = params.name
-    logger.debug(f"Handling get_prompt request for {name}")
+    logger.debug("Handling MCP prompt request")
     template = PROMPT_TEMPLATES.get(name)
     if template is None:
-        logger.error(f"Prompt '{name}' not found")
+        logger.error("MCP prompt not found")
         return mcp_types.GetPromptResult(
             description="Prompt not found",
             messages=[
@@ -478,10 +478,10 @@ async def get_prompt(ctx_or_request: Any, params: Any = None) -> mcp_types.GetPr
         )
     try:
         messages = template(getattr(params, "arguments", None) or {})
-        logger.debug(f"Generated messages: {messages}")
+        logger.debug("MCP prompt messages generated")
         return mcp_types.GetPromptResult(messages=messages)
     except Exception as e:
-        logger.error(f"Error generating prompt: {e}", exc_info=True)
+        logger.error("MCP prompt generation failed (%s)", type(e).__name__)
         return mcp_types.GetPromptResult(
             messages=[
                 mcp_types.PromptMessage(

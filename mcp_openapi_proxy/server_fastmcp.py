@@ -128,7 +128,7 @@ def register_fastmcp_env_prompt(raw: Optional[str] = None) -> None:
         return
     name = parsed["name"]
     if name in BUILTIN_PROMPT_NAMES:
-        logger.error(f"PROMPT name {name!r} collides with a built-in prompt; ignoring")
+        logger.error("Custom PROMPT uses a reserved built-in name; ignoring")
         return
     description = parsed["description"]
     messages = list(parsed["messages"])
@@ -139,7 +139,7 @@ def register_fastmcp_env_prompt(raw: Optional[str] = None) -> None:
 
     _env_prompt.__doc__ = description
     mcp.prompt(name=name, description=description)(_env_prompt)
-    logger.debug(f"Added dynamic FastMCP prompt from PROMPT: {name}")
+    logger.debug("Registered custom FastMCP prompt")
 
 
 register_fastmcp_env_prompt()

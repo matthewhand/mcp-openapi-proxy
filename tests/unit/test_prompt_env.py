@@ -108,3 +108,85 @@ def test_lowlevel_skips_prompt_when_disabled(monkeypatch):
     lowlevel.register_env_prompt(raw)
     assert all(p.name != "disabled_env_prompt" for p in lowlevel.prompts)
     assert "disabled_env_prompt" not in lowlevel.PROMPT_TEMPLATES
+
+
+
+def test_custom_prompt_names_not_exposed_in_debug_logs(monkeypatch, caplog):
+    """Both registration paths must not echo configured names into log sinks."""
+    import logging
+    from mcp_openapi_proxy import server_fastmcp as fast
+    from mcp_openapi_proxy import server_lowlevel as low
+
+    sentinel = "SYNTHETIC_PRIVATE_PROMPT_NAME_NOT_REAL"
+    raw = json.dumps({
+        "name": sentinel + "\nFORGED_LOG_ENTRY",
+        "description": "Fictional example",
+        "messages": [{"user": "Fictional question"}],
+    })
+    monkeypatch.setenv("ENABLE_PROMPTS", "true")
+    recorded = []
+    def fake_decorator(*, name, description):
+        recorded.append((name, description))
+        return lambda callback: callback
+    monkeypatch.setattr(fast.mcp, "prompt", fake_decorator)
+    previous_prompts = list(low.prompts)
+    previous_templates = dict(low.PROMPT_TEMPLATES)
+    try:
+        with caplog.at_level(logging.DEBUG, logger="mcp_openapi_proxy"):
+            low.register_env_prompt(raw)
+            fast.register_fastmcp_env_prompt(raw)
+        assert recorded[0][0].startswith(sentinel)
+        assert sentinel in [item.name for item in low.prompts if item.name.startswith(sentinel)][0]
+        assert sentinel not in caplog.text
+        assert "FORGED_LOG_ENTRY" not in caplog.text
+    finally:
+        low.prompts[:] = previous_prompts
+        low.PROMPT_TEMPLATES.clear()
+        low.PROMPT_TEMPLATES.update(previous_templates)
+
+
+def test_invalid_json_and_reserved_names_never_echo_raw_prompt_values(
+        monkeypatch, caplog):
+    import logging
+    from mcp_openapi_proxy import server_fastmcp as fast
+    from mcp_openapi_proxy import server_lowlevel as low
+    marker = "SYNTHETIC_CONFIG_MARKER_NOT_REAL"
+    monkeypatch.setenv("ENABLE_PROMPTS", "true")
+    with caplog.at_level(logging.DEBUG, logger="mcp_openapi_proxy"):
+        assert parse_prompt_env("{" + marker) is None
+        low.register_env_prompt(json.dumps({"name": "summarize_spec", "messages": []}))
+        fast.register_fastmcp_env_prompt(json.dumps({"name": "whimsical_blog", "messages": []}))
+    assert marker not in caplog.text
+    assert "Failed to parse PROMPT as JSON:" not in caplog.text
+
+
+
+def test_prompt_lookup_does_not_log_custom_name(monkeypatch, caplog):
+    """Prompt discovery must not echo user-configured names into DEBUG/errors."""
+    import logging
+    from mcp_openapi_proxy import server_lowlevel as low
+    sentinel = "SYNTHETIC_CUSTOM_PROMPT_LOOKUP_SECRET_NOT_REAL"
+    monkeypatch.setenv("ENABLE_PROMPTS", "true")
+    before_prompts = list(low.prompts)
+    before_templates = dict(low.PROMPT_TEMPLATES)
+    try:
+        low.register_env_prompt(json.dumps({
+            "name": sentinel, "messages": [{"user": "SYNTHETIC_PROMPT_BODY_SENTINEL_NOT_REAL"}]
+        }))
+        with caplog.at_level(logging.DEBUG, logger="mcp_openapi_proxy"):
+            result = asyncio.run(low.get_prompt(
+                SimpleNamespace(params=SimpleNamespace(name=sentinel, arguments={}))
+            ))
+            assert result.messages
+            missing = asyncio.run(low.get_prompt(
+                SimpleNamespace(params=SimpleNamespace(
+                    name=sentinel + "_missing", arguments={}
+                ))
+            ))
+        assert missing.description == "Prompt not found"
+        assert sentinel not in caplog.text
+        assert "SYNTHETIC_PROMPT_BODY_SENTINEL_NOT_REAL" not in caplog.text
+    finally:
+        low.prompts[:] = before_prompts
+        low.PROMPT_TEMPLATES.clear()
+        low.PROMPT_TEMPLATES.update(before_templates)

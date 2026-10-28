@@ -37,7 +37,7 @@ def parse_prompt_env(raw: Optional[str] = None) -> Optional[Dict[str, Any]]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        logger.error(f"Failed to parse PROMPT as JSON: {exc}")
+        logger.error("Invalid PROMPT JSON; custom prompt ignored")
         return None
     if not isinstance(data, dict):
         logger.error("PROMPT JSON must be an object with name, description, and messages")
