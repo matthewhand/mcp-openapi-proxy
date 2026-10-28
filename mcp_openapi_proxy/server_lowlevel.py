@@ -133,6 +133,49 @@ PROMPT_TEMPLATES: Dict[str, Any] = {
 }
 
 
+def register_env_prompt(raw: Optional[str] = None) -> None:
+    """Register one extra prompt from the PROMPT env var when prompts are enabled.
+
+    Read at call time so tests can set PROMPT without reloading the module.
+    Import-time registration covers a normal process start.
+    """
+    from mcp_openapi_proxy.prompt_env import BUILTIN_PROMPT_NAMES, parse_prompt_env
+
+    if os.getenv("ENABLE_PROMPTS", "true").lower() != "true":
+        return
+    parsed = parse_prompt_env(raw)
+    if not parsed:
+        return
+    name = parsed["name"]
+    if name in BUILTIN_PROMPT_NAMES:
+        logger.error("Custom PROMPT uses a reserved built-in name; ignoring")
+        return
+    prompts[:] = [p for p in prompts if p.name != name]
+    prompts.append(
+        mcp_types.Prompt(
+            name=name,
+            description=parsed["description"],
+            arguments=[],
+        )
+    )
+    stored = [
+        mcp_types.PromptMessage(
+            role=item["role"],
+            content=mcp_types.TextContent(type="text", text=item["text"]),
+        )
+        for item in parsed["messages"]
+    ]
+
+    def _messages(_args: Any) -> List[mcp_types.PromptMessage]:
+        return list(stored)
+
+    PROMPT_TEMPLATES[name] = _messages
+    logger.debug("Registered custom low-level MCP prompt")
+
+
+register_env_prompt()
+
+
 def build_capabilities() -> "mcp_types.ServerCapabilities":
     """Advertise a capability whenever its feature is enabled (ENABLE_*)."""
     return mcp_types.ServerCapabilities(
@@ -426,10 +469,10 @@ async def list_prompts(ctx_or_request: Any = None, params: Any = None) -> mcp_ty
 async def get_prompt(ctx_or_request: Any, params: Any = None) -> mcp_types.GetPromptResult:
     _, params = unpack_handler_args(ctx_or_request, params)
     name = params.name
-    logger.debug(f"Handling get_prompt request for {name}")
+    logger.debug("Handling MCP prompt request")
     template = PROMPT_TEMPLATES.get(name)
     if template is None:
-        logger.error(f"Prompt '{name}' not found")
+        logger.error("MCP prompt not found")
         return mcp_types.GetPromptResult(
             description="Prompt not found",
             messages=[
@@ -441,10 +484,10 @@ async def get_prompt(ctx_or_request: Any, params: Any = None) -> mcp_types.GetPr
         )
     try:
         messages = template(getattr(params, "arguments", None) or {})
-        logger.debug(f"Generated messages: {messages}")
+        logger.debug("MCP prompt messages generated")
         return mcp_types.GetPromptResult(messages=messages)
     except Exception as e:
-        logger.error(f"Error generating prompt: {e}", exc_info=True)
+        logger.error("MCP prompt generation failed (%s)", type(e).__name__)
         return mcp_types.GetPromptResult(
             messages=[
                 mcp_types.PromptMessage(
