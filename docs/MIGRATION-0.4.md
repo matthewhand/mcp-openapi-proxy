@@ -23,6 +23,7 @@ Every Streamable HTTP POST is self-contained:
 ```http
 POST /mcp HTTP/1.1
 Content-Type: application/json
+Accept: application/json, text/event-stream
 MCP-Protocol-Version: 2026-07-28
 Mcp-Method: tools/call
 Mcp-Name: get_ping
