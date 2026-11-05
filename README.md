@@ -1,3 +1,5 @@
+![OpenAPI endpoints become LLM tools through MCP OpenAPI Proxy](docs/assets/mcp-openapi-proxy-banner.png)
+
 # mcp-openapi-proxy
 
 **mcp-openapi-proxy** is a Python package that implements a Model Context Protocol (MCP) server, designed to dynamically expose REST APIs—defined by OpenAPI specifications—as MCP tools. This facilitates seamless integration of OpenAPI-described APIs into MCP-based workflows.
