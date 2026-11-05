@@ -5,6 +5,7 @@ OpenAPI specification handling for mcp-openapi-proxy.
 import os
 import json
 import re # Import the re module
+from copy import deepcopy
 import requests
 import yaml
 from typing import Dict, Optional, List, Union, Set
@@ -29,6 +30,53 @@ _WRITE_TOKENS = frozenset({
 })
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 _IDEMPOTENT_WRITE_METHODS = frozenset({"PUT", "DELETE"})
+
+
+class OpenAPIReferenceError(ValueError):
+    """Raised when an input schema points to a missing local OpenAPI node."""
+
+    def __init__(self, reference: str):
+        self.reference = reference
+        super().__init__(f"Unresolved local OpenAPI reference: {reference}")
+
+
+def resolve_local_references(value, document: Dict):
+    """Return a copy of value with resolvable local JSON Pointer refs expanded."""
+    def pointer_target(reference: str):
+        if reference == "#":
+            return document
+        if not reference.startswith("#/"):
+            return None
+        target = document
+        for token in reference[2:].split("/"):
+            token = token.replace("~1", "/").replace("~0", "~")
+            if not isinstance(target, dict) or token not in target:
+                raise OpenAPIReferenceError(reference)
+            target = target[token]
+        return target
+
+    def resolve(node, active_references):
+        if isinstance(node, list):
+            return [resolve(item, active_references) for item in node]
+        if not isinstance(node, dict):
+            return deepcopy(node)
+
+        reference = node.get("$ref")
+        if isinstance(reference, str) and reference.startswith("#"):
+            target = pointer_target(reference)
+            if reference in active_references:
+                return {}
+            resolved = resolve(target, active_references | {reference})
+            if not isinstance(resolved, dict):
+                return resolved
+            # OpenAPI 3.1 permits siblings next to $ref. Preserve them.
+            siblings = {key: val for key, val in node.items() if key != "$ref"}
+            resolved.update({key: resolve(val, active_references) for key, val in siblings.items()})
+            return resolved
+
+        return {key: resolve(item, active_references) for key, item in node.items()}
+
+    return resolve(value, set())
 
 
 def _identifier_tokens(text: str) -> List[str]:
@@ -319,8 +367,14 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                 # Process parameters defined at the path level (common parameters)
                 path_params = path_item.get('parameters', [])
                 # Combine parameters, giving operation-level precedence if names clash (though unlikely per spec)
-                all_params = {p.get('name'): p for p in path_params if isinstance(p, dict) and p.get('name')}
-                all_params.update({p.get('name'): p for p in op_params if isinstance(p, dict) and p.get('name')})
+                all_params = {
+                    p.get('name'): resolve_local_references(p, spec)
+                    for p in path_params if isinstance(p, dict) and p.get('name')
+                }
+                all_params.update({
+                    p.get('name'): resolve_local_references(p, spec)
+                    for p in op_params if isinstance(p, dict) and p.get('name')
+                })
 
                 for param_name, param_details in all_params.items():
                     if not param_name or not isinstance(param_details, dict):
@@ -374,12 +428,13 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                 # Handle request body (for POST, PUT, PATCH)
                 request_body = operation.get('requestBody')
                 if request_body and isinstance(request_body, dict):
+                     request_body = resolve_local_references(request_body, spec)
                      content = request_body.get('content')
                      if content and isinstance(content, dict):
                           # Prefer application/json if available
                           json_content = content.get('application/json')
                           if json_content and isinstance(json_content, dict) and 'schema' in json_content:
-                               body_schema = json_content['schema']
+                               body_schema = resolve_local_references(json_content['schema'], spec)
                                # If body schema is object with properties, merge them
                                if body_schema.get('type') == 'object' and 'properties' in body_schema:
                                     for prop_name, prop_schema in body_schema['properties'].items():
@@ -402,6 +457,10 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                                #         input_schema['required'].append('body')
 
 
+                # Catch references that are nested in properties/items/compositions
+                # copied above before publishing the standalone MCP schema.
+                input_schema = resolve_local_references(input_schema, spec)
+
                 # Create and register the tool. Annotations follow MCP ToolAnnotations
                 # (title + method-derived hints) so clients such as Gemini Spark see
                 # the same fingerprint as Notion/Linear.
@@ -423,6 +482,12 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                 }
                 logger.debug(f"Registered tool: {function_name} from {raw_name}") # Simplified log
 
+            except OpenAPIReferenceError as e:
+                logger.warning(
+                    "Skipping registration for '%s %s': input schema contains "
+                    "unresolved local $ref '%s'.",
+                    method.upper(), path, e.reference,
+                )
             except Exception as e:
                 logger.error(f"Error registering function for {method.upper()} {path}: {e}", exc_info=True)
 

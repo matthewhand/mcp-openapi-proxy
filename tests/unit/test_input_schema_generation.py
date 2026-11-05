@@ -202,6 +202,97 @@ class TestInputSchemaGeneration(unittest.TestCase):
         self.assertEqual(ids_prop["type"], "array")
         self.assertEqual(ids_prop.get("items"), {"type": "string"})
 
+    def test_component_request_body_schema_is_expanded(self):
+        spec = {
+            "openapi": "3.0.0",
+            "components": {
+                "schemas": {
+                    "CreatePet": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                    }
+                }
+            },
+            "paths": {
+                "/pets": {
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"$ref": "#/components/schemas/CreatePet"}}
+                            }
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        registered_tools = register_functions(spec)
+
+        self.assertEqual(len(registered_tools), 1)
+        schema = registered_tools[0].input_schema
+        self.assertEqual(schema["properties"]["name"], {"type": "string"})
+        self.assertEqual(schema["required"], ["name"])
+
+    def test_unresolved_input_reference_skips_only_affected_tool(self):
+        spec = {
+            "openapi": "3.0.0",
+            "paths": {
+                "/broken": {
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"$ref": "#/components/schemas/idRequest"}}
+                            }
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+                "/healthy": {"get": {"responses": {"200": {"description": "OK"}}}},
+            },
+        }
+
+        with self.assertLogs("mcp_openapi_proxy", level="WARNING") as logs:
+            registered_tools = register_functions(spec)
+
+        self.assertEqual([tool.name for tool in registered_tools], ["get_healthy"])
+        self.assertIn("#/components/schemas/idRequest", "\n".join(logs.output))
+
+    def test_fastmcp_unresolved_input_reference_skips_affected_function(self):
+        import json
+        import os
+        from mcp_openapi_proxy import server_fastmcp
+
+        spec = {
+            "openapi": "3.0.0",
+            "paths": {
+                "/broken": {
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": {"$ref": "#/components/schemas/idRequest"}}
+                            }
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+                "/healthy": {"get": {"responses": {"200": {"description": "OK"}}}},
+            },
+        }
+        original_fetch = server_fastmcp.fetch_openapi_spec
+        server_fastmcp.fetch_openapi_spec = lambda url: spec
+        os.environ["OPENAPI_SPEC_URL"] = "http://dummy_url_missing_ref"
+        try:
+            result = json.loads(server_fastmcp.list_functions())
+        finally:
+            server_fastmcp.fetch_openapi_spec = original_fetch
+            os.environ.pop("OPENAPI_SPEC_URL", None)
+
+        function_names = [item["name"] for item in result]
+        self.assertIn("get_healthy", function_names)
+        self.assertNotIn("post_broken", function_names)
+
     def test_input_schema_contents(self):
         # Ensure that one tool is registered for the endpoint using the returned tools list directly
         registered_tools = register_functions(self.dummy_spec)
