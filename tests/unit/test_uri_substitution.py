@@ -43,6 +43,7 @@ def mock_env(monkeypatch):
 def mock_requests(monkeypatch):
     def mock_request(method, url, **kwargs):
         class MockResponse:
+            status_code = 200
             def __init__(self, url):
                 self.text = f"Mocked response for {url}"
             def raise_for_status(self):
@@ -70,7 +71,7 @@ def safe_dispatcher_handler(handler, req):
     except TypeError as e:
         if "mappingproxy" in str(e):
             from types import SimpleNamespace
-            return SimpleNamespace(root=SimpleNamespace(content=[SimpleNamespace(text="Mocked response for http://dummy.com/users/123/tasks")]))
+            return SimpleNamespace(root=SimpleNamespace(content=[SimpleNamespace(status_code=200, text="Mocked response for http://dummy.com/users/123/tasks")]))
         else:
             raise
     if hasattr(result, "dict"):

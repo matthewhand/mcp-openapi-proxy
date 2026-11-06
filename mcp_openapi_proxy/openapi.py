@@ -4,6 +4,7 @@ OpenAPI specification handling for mcp-openapi-proxy.
 
 import os
 import json
+import hashlib
 import re # Import the re module
 import requests
 import yaml
@@ -11,6 +12,7 @@ from typing import Dict, Optional, List, Union, Set
 from urllib.parse import unquote, quote
 from mcp import types
 from mcp_openapi_proxy.utils import normalize_tool_name
+from mcp_openapi_proxy.path_safety import resolve_parameter_reference, resolve_parameter_schema
 from .logging_setup import logger
 
 # Define the required tool name pattern
@@ -126,7 +128,7 @@ def annotations_wire_dict(
 
 def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
     """Fetch and parse an OpenAPI specification from a URL with retries."""
-    logger.debug(f"Fetching OpenAPI spec from URL: {url}")
+    logger.debug('Fetching OpenAPI spec from URL (details omitted)')
     attempt = 0
     while attempt < retries:
         try:
@@ -137,36 +139,36 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                 # Check IGNORE_SSL_SPEC env var
                 ignore_ssl_spec = os.getenv("IGNORE_SSL_SPEC", "false").lower() in ("true", "1", "yes")
                 verify_ssl_spec = not ignore_ssl_spec
-                logger.debug(f"Fetching spec with SSL verification: {verify_ssl_spec} (IGNORE_SSL_SPEC={ignore_ssl_spec})")
+                logger.debug("Fetching OpenAPI spec (TLS verification policy applied)")
                 response = requests.get(url, timeout=10, verify=verify_ssl_spec)
                 response.raise_for_status()
                 content = response.text
-            logger.debug(f"Fetched content length: {len(content)} bytes")
+            logger.debug('Fetched content length (details omitted)')
             try:
                 spec = json.loads(content)
-                logger.debug(f"Parsed as JSON from {url}")
+                logger.debug('Parsed as JSON from (details omitted)')
             except json.JSONDecodeError:
                 try:
                     spec = yaml.safe_load(content)
-                    logger.debug(f"Parsed as YAML from {url}")
+                    logger.debug('Parsed as YAML from (details omitted)')
                 except yaml.YAMLError as ye:
-                    logger.error(f"YAML parsing failed: {ye}. Raw content: {content[:500]}...")
+                    logger.error('YAML parsing failed (details omitted)')
                     return None
             return spec
         except requests.RequestException as e:
             attempt += 1
-            logger.warning(f"Fetch attempt {attempt}/{retries} failed: {e}")
+            logger.warning('Fetch attempt (details omitted)')
             if attempt == retries:
-                logger.error(f"Failed to fetch spec from {url} after {retries} attempts: {e}")
+                logger.error('Failed to fetch spec from (details omitted)')
                 return None
         except FileNotFoundError as e:
-             logger.error(f"Failed to open local file spec {url}: {e}")
+             logger.error('Failed to open local file spec (details omitted)')
              return None
         except Exception as e:
              attempt += 1
-             logger.warning(f"Unexpected error during fetch attempt {attempt}/{retries}: {e}")
+             logger.warning('Unexpected error during fetch attempt (details omitted)')
              if attempt == retries:
-                 logger.error(f"Failed to process spec from {url} after {retries} attempts due to unexpected error: {e}")
+                 logger.error('Failed to process spec from (details omitted)')
                  return None
     return None
 
@@ -177,9 +179,9 @@ def build_base_url(spec: Dict) -> Optional[str]:
         urls = [url.strip() for url in override.split(",")]
         for url in urls:
             if url.startswith("http://") or url.startswith("https://"):
-                logger.debug(f"SERVER_URL_OVERRIDE set, using first valid URL: {url}")
+                logger.debug('SERVER_URL_OVERRIDE set using first valid URL (details omitted)')
                 return url
-        logger.error(f"No valid URLs found in SERVER_URL_OVERRIDE: {override}")
+        logger.error('No valid URLs found in SERVER_URL_OVERRIDE (details omitted)')
         return None
 
     if "servers" in spec and spec["servers"]:
@@ -187,7 +189,7 @@ def build_base_url(spec: Dict) -> Optional[str]:
          if isinstance(spec["servers"], list) and len(spec["servers"]) > 0 and isinstance(spec["servers"][0], dict):
               server_url = spec["servers"][0].get("url")
               if server_url:
-                  logger.debug(f"Using first server URL from spec: {server_url}")
+                  logger.debug('Using first server URL from spec (details omitted)')
                   return server_url
               else:
                   logger.warning("First server entry in spec missing 'url' key.")
@@ -201,7 +203,7 @@ def build_base_url(spec: Dict) -> Optional[str]:
          host = spec.get("host")
          if host:
              v2_url = f"{scheme}://{host}{base_path}"
-             logger.debug(f"Using OpenAPI v2 host/schemes/basePath: {v2_url}")
+             logger.debug('Using OpenAPI v2 host/schemes/basePath (details omitted)')
              return v2_url
          else:
              logger.warning("OpenAPI v2 spec missing 'host'.")
@@ -216,7 +218,7 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
     auth_type = os.getenv("API_AUTH_TYPE", "Bearer").lower()
     if api_key:
         if auth_type == "bearer":
-            logger.debug(f"Using API_KEY as Bearer token.") # Avoid logging key prefix
+            logger.debug("API authentication configured (values omitted)") # Avoid logging key prefix
             headers["Authorization"] = f"Bearer {api_key}"
         elif auth_type == "basic":
             logger.warning("API_AUTH_TYPE is Basic, but Basic Auth is not fully implemented yet.")
@@ -224,9 +226,9 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
         elif auth_type == "api-key":
             key_name = os.getenv("API_AUTH_HEADER", "Authorization")
             headers[key_name] = api_key
-            logger.debug(f"Using API_KEY as API-Key in header '{key_name}'.") # Avoid logging key prefix
+            logger.debug("API authentication configured (values omitted)") # Avoid logging key prefix
         else:
-             logger.warning(f"Unsupported API_AUTH_TYPE: {auth_type}")
+             logger.warning('Unsupported API_AUTH_TYPE (details omitted)')
     # TODO: Add logic to check operation['security'] and spec['components']['securitySchemes']
     #       to potentially override or supplement env var based auth.
     return headers
@@ -235,6 +237,14 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
 # names deduplicated after TOOL_NAME_MAX_LENGTH truncation (issue #11) can
 # still be resolved back to the right operation at call time.
 _REGISTERED_OPERATIONS: Dict[str, Dict] = {}
+
+
+def _spec_identity(spec: Dict, source_url: Optional[str] = None) -> str:
+    """Fingerprint one OpenAPI document, optionally bound to its source URL."""
+    payload = json.dumps(spec, sort_keys=True, default=str).encode("utf-8")
+    if source_url is not None:
+        payload = str(source_url).encode("utf-8") + bytes([0]) + payload
+    return hashlib.sha256(payload).hexdigest()
 
 
 def register_functions(spec: Dict) -> List[types.Tool]:
@@ -251,7 +261,8 @@ def register_functions(spec: Dict) -> List[types.Tool]:
         logger.error("No 'paths' key in OpenAPI spec during registration.")
         return tools_list
 
-    logger.debug(f"Available paths in spec: {list(spec['paths'].keys())}")
+    spec_identity = _spec_identity(spec)
+    logger.debug('Available paths in spec (details omitted)')
     # Filter paths based on whitelist *before* iterating
     # Note: is_tool_whitelisted expects the path string
     filtered_paths = {
@@ -259,7 +270,7 @@ def register_functions(spec: Dict) -> List[types.Tool]:
         for path, item in spec['paths'].items()
         if is_tool_whitelisted(path)
     }
-    logger.debug(f"Paths after whitelist filtering: {list(filtered_paths.keys())}")
+    logger.debug('Paths after whitelist filtering (details omitted)')
 
     if not filtered_paths:
         logger.warning("No whitelisted paths found in OpenAPI spec after filtering. No tools will be registered.")
@@ -269,7 +280,7 @@ def register_functions(spec: Dict) -> List[types.Tool]:
 
     for path, path_item in filtered_paths.items():
         if not path_item or not isinstance(path_item, dict):
-            logger.debug(f"Skipping empty or invalid path item for {path}")
+            logger.debug('Skipping empty or invalid path item for (details omitted)')
             continue
         for method, operation in path_item.items():
             # Check if method is a valid HTTP verb and operation is a dictionary
@@ -282,10 +293,7 @@ def register_functions(spec: Dict) -> List[types.Tool]:
 
                 # --- Add Regex Validation Step ---
                 if not re.match(TOOL_NAME_REGEX, function_name):
-                    logger.error(
-                        f"Skipping registration for '{raw_name}': "
-                        f"Generated name '{function_name}' does not match required pattern '{TOOL_NAME_REGEX}'."
-                    )
+                    logger.error('Skipping registration for (details omitted)')
                     continue # Skip this tool
 
                 # --- Check for duplicate names ---
@@ -295,16 +303,13 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                 if function_name in registered_names:
                     function_name = deduplicate_tool_name(function_name, registered_names)
                     if not re.match(TOOL_NAME_REGEX, function_name):
-                        logger.error(
-                            f"Skipping registration for '{raw_name}': "
-                            f"Deduplicated name '{function_name}' does not match required pattern '{TOOL_NAME_REGEX}'."
-                        )
+                        logger.error('Skipping registration for (details omitted)')
                         continue # Skip this tool
 
                 description = operation.get('summary', operation.get('description', 'No description available'))
                 # Ensure description is a string
                 if not isinstance(description, str):
-                    logger.warning(f"Description for {function_name} is not a string, using default.")
+                    logger.warning('Description for (details omitted)')
                     description = "No description available"
 
                 # --- Build Input Schema ---
@@ -316,11 +321,18 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                 }
                 # Process parameters defined directly under the operation
                 op_params = operation.get('parameters', [])
-                # Process parameters defined at the path level (common parameters)
+                # Process parameters defined at the path level (common parameters).
                 path_params = path_item.get('parameters', [])
-                # Combine parameters, giving operation-level precedence if names clash (though unlikely per spec)
-                all_params = {p.get('name'): p for p in path_params if isinstance(p, dict) and p.get('name')}
-                all_params.update({p.get('name'): p for p in op_params if isinstance(p, dict) and p.get('name')})
+                if not isinstance(op_params, list) or not isinstance(path_params, list):
+                    raise ValueError("Invalid OpenAPI parameter list")
+                # Resolve local Reference Objects before schema generation. External
+                # references are never fetched or trusted during registration.
+                all_params = {}
+                for declaration in path_params + op_params:
+                    param_details = resolve_parameter_reference(declaration, spec)
+                    param_name = param_details.get("name")
+                    if param_name:
+                        all_params[param_name] = param_details
 
                 for param_name, param_details in all_params.items():
                     if not param_name or not isinstance(param_details, dict):
@@ -330,7 +342,7 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                     # We primarily care about 'path' and 'query' for simple input schema generation
                     # Body parameters are handled differently (often implicitly the whole input)
                     if param_in in ['path', 'query']:
-                        param_schema = param_details.get('schema', {})
+                        param_schema = resolve_parameter_schema(param_details, spec)
                         prop_type = param_schema.get('type', 'string')
                         # Basic type mapping, default to string
                         schema_type = prop_type if prop_type in ['string', 'integer', 'boolean', 'number', 'array'] else 'string'
@@ -420,13 +432,14 @@ def register_functions(spec: Dict) -> List[types.Tool]:
                     "method": method.upper(),
                     "operation": operation,
                     "original_path": path,
+                    "spec_identity": spec_identity,
                 }
-                logger.debug(f"Registered tool: {function_name} from {raw_name}") # Simplified log
+                logger.debug('Registered tool (details omitted)') # Simplified log
 
             except Exception as e:
-                logger.error(f"Error registering function for {method.upper()} {path}: {e}", exc_info=True)
+                logger.error('Error registering function for (details omitted)')
 
-    logger.info(f"Successfully registered {len(tools_list)} tools from OpenAPI spec.")
+    logger.info('Successfully registered %d tools from OpenAPI spec. (details omitted)')
 
     # Update the global/shared tools list if necessary (depends on server implementation)
     # Example for lowlevel server:
@@ -446,6 +459,15 @@ def lookup_operation_details(function_name: str, spec: Dict) -> Union[Dict, None
     # since they cannot be regenerated from the spec alone.
     registered = _REGISTERED_OPERATIONS.get(function_name)
     if registered:
+        if registered.get("spec_identity") != _spec_identity(spec):
+            logger.warning("Stale OpenAPI operation registration rejected")
+            return None
+        path = registered.get("original_path")
+        method = str(registered.get("method", "")).lower()
+        current = spec.get("paths", {}).get(path, {}).get(method)
+        if current != registered.get("operation"):
+            logger.warning("OpenAPI operation registration no longer matches spec")
+            return None
         return dict(registered)
 
     if not spec or 'paths' not in spec:
@@ -472,8 +494,8 @@ def lookup_operation_details(function_name: str, spec: Dict) -> Union[Dict, None
                   continue # Skip potentially invalid names
 
              if current_function_name == function_name:
-                 logger.debug(f"Found operation details for '{function_name}' at {method.upper()} {path}")
+                 logger.debug('Found operation details for (details omitted)')
                  return {"path": path, "method": method.upper(), "operation": operation, "original_path": path}
 
-    logger.warning(f"Could not find operation details for function name: '{function_name}'")
+    logger.warning('Could not find operation details for function name (details omitted)')
     return None
