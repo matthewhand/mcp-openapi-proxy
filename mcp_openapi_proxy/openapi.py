@@ -11,7 +11,7 @@ import yaml
 from typing import Dict, Optional, List, Union, Set
 from urllib.parse import unquote, quote
 from mcp import types
-from mcp_openapi_proxy.utils import normalize_tool_name
+from mcp_openapi_proxy.utils import normalize_tool_name, yaml_load_safe
 from mcp_openapi_proxy.path_safety import resolve_parameter_reference, resolve_parameter_schema
 from .logging_setup import logger
 
@@ -149,7 +149,7 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                 logger.debug('Parsed as JSON from (details omitted)')
             except json.JSONDecodeError:
                 try:
-                    spec = yaml.safe_load(content)
+                    spec = yaml_load_safe(content)
                     logger.debug('Parsed as YAML from (details omitted)')
                 except yaml.YAMLError as ye:
                     logger.error('YAML parsing failed (details omitted)')

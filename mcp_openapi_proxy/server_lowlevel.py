@@ -230,12 +230,12 @@ async def ensure_spec_loaded() -> Optional[Dict[str, Any]]:
 
 
 async def dispatcher_handler(ctx_or_request: Any, params: Any = None) -> mcp_types.CallToolResult:
-    _, params = unpack_handler_args(ctx_or_request, params)
     """
     Dispatcher handler that routes CallToolRequest to the appropriate function (tool).
     """
     global openapi_spec_data
     try:
+        _, params = unpack_handler_args(ctx_or_request, params)
         await ensure_spec_loaded()
         function_name = params.name
         logger.debug('Dispatcher received CallToolRequest for function (details omitted)')

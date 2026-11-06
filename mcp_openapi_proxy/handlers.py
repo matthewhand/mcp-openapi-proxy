@@ -40,12 +40,12 @@ openapi_spec_data = None
 
 
 async def dispatcher_handler(ctx_or_request: Any, params: Any = None) -> Any:
-    _, params = unpack_handler_args(ctx_or_request, params)
     """
     Dispatcher handler that routes CallToolRequest to the appropriate function (tool).
     """
     global openapi_spec_data
     try:
+        _, params = unpack_handler_args(ctx_or_request, params)
         function_name = params.name
         logger.debug('Dispatcher received CallToolRequest for function (details omitted)')
         api_key = os.getenv("API_KEY")

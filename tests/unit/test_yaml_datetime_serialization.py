@@ -5,6 +5,8 @@ import json
 import os
 
 import yaml
+import pytest
+import importlib
 
 
 def test_yaml_load_safe_keeps_timestamp_as_string():
@@ -16,8 +18,9 @@ def test_yaml_load_safe_keeps_timestamp_as_string():
                       datetime.datetime)
 
 
-def test_fetch_yaml_spec_with_datetime_is_json_serializable(tmp_path, monkeypatch):
-    from mcp_openapi_proxy.utils import fetch_openapi_spec
+@pytest.mark.parametrize("module_name", ["mcp_openapi_proxy.utils", "mcp_openapi_proxy.openapi"])
+def test_fetch_yaml_spec_with_datetime_is_json_serializable(tmp_path, monkeypatch, module_name):
+    fetch_openapi_spec = importlib.import_module(module_name).fetch_openapi_spec
     spec = (
         "openapi: 3.0.0\n"
         "info: {title: dt, version: 1.0.0}\n"
