@@ -166,6 +166,13 @@ def resolve_parameter_schema(parameter, spec):
     return schema
 
 
+def _json_scalar_equal(value, choice):
+    # JSON has one numeric domain; booleans are distinct from numbers.
+    if type(value) in (int, float) and type(choice) in (int, float):
+        return value == choice
+    return type(value) is type(choice) and value == choice
+
+
 def validate_path_arguments(template, parameters, operation, path_item=None, spec=None):
     """Enforce scalar path-schema contracts before URL encoding or HTTP dispatch.
 
@@ -220,6 +227,9 @@ def validate_path_arguments(template, parameters, operation, path_item=None, spe
             # treated as authorization to accept arbitrary path values.
             raise ValueError("Unsupported path schema")
         declared_type = schema.get("type")
+        if (declared_type == "integer" and type(value) is float
+                and math.isfinite(value) and value.is_integer()):
+            value = validated[name] = int(value)
         if declared_type is not None:
             supported = {
                 "string": type(value) is str,
@@ -233,11 +243,10 @@ def validate_path_arguments(template, parameters, operation, path_item=None, spe
         if "enum" in schema:
             options = schema["enum"]
             if not isinstance(options, list) or not any(
-                    type(value) is type(choice) and value == choice
+                    _json_scalar_equal(value, choice)
                     for choice in options):
                 raise ValueError("Path parameter violates enum")
-        if "const" in schema and not (
-                type(value) is type(schema["const"]) and value == schema["const"]):
+        if "const" in schema and not _json_scalar_equal(value, schema["const"]):
             raise ValueError("Path parameter violates const")
         if "pattern" in schema:
             pattern = schema["pattern"]
@@ -307,12 +316,26 @@ def validate_path_arguments(template, parameters, operation, path_item=None, spe
                         or bound < 0 or (len(value) < bound if key == "minLength"
                                          else len(value) > bound)):
                     raise ValueError("Path parameter violates length")
-        numeric_bounds = (
+        numeric_bounds = [
             ("minimum", lambda x, b: x < b),
             ("maximum", lambda x, b: x > b),
-            ("exclusiveMinimum", lambda x, b: x <= b),
-            ("exclusiveMaximum", lambda x, b: x >= b),
-        )
+        ]
+        legacy_bounds = isinstance(spec, dict) and (
+            spec.get("swagger") == "2.0"
+            or str(spec.get("openapi", "")).startswith("3.0."))
+        for exclusive, inclusive, compare in (
+                ("exclusiveMinimum", "minimum", lambda x, b: x <= b),
+                ("exclusiveMaximum", "maximum", lambda x, b: x >= b)):
+            if exclusive not in schema:
+                continue
+            if legacy_bounds:
+                flag = schema[exclusive]
+                if type(flag) is not bool:
+                    raise ValueError("Invalid exclusive numeric bound")
+                if flag and inclusive in schema:
+                    numeric_bounds.append((inclusive, compare))
+            else:
+                numeric_bounds.append((exclusive, compare))
         if any(key in schema for key, _ in numeric_bounds):
             if type(value) not in (int, float) or (
                     type(value) is float and not math.isfinite(value)):

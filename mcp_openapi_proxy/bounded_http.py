@@ -61,7 +61,8 @@ def _worker(payload):
                 raise DispatchFailure("Invalid final upstream status")
             response.raise_for_status()
             length = response.headers.get("Content-Length")
-            if length is not None:
+            # HEAD describes a hypothetical GET body, not transferred bytes.
+            if length is not None and str(options.get("method", "")).upper() != "HEAD":
                 if not length.isascii() or not length.isdecimal() or len(length) > 10:
                     raise DispatchFailure("Invalid upstream length")
                 if int(length) > MAX_RESPONSE_BYTES:

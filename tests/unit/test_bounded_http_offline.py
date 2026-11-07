@@ -20,6 +20,10 @@ def api():
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
             pass
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("Content-Length", str(2**40))
+            self.end_headers()
         def do_GET(self):
             started.authorizations.append(self.headers.get("Authorization"))
             path = self.path.split("?", 1)[0]
@@ -259,3 +263,37 @@ print(result.status_code)
                             capture_output=True, text=True, timeout=8)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "200"
+
+
+def test_head_large_representation_has_no_response_body(api):
+    base, _ = api
+    result = transport.bounded_request(method="HEAD", url=base+"/large")
+    assert result.status_code == 200 and result.text == ""
+
+
+def test_preloading_alternate_catalog_keeps_default_native_spec_resource(monkeypatch):
+    import os
+    from mcp_openapi_proxy import server_fastmcp as fast
+
+    for key in list(os.environ):
+        if key == "OPENAPI_SPEC_URL" or key.startswith("OPENAPI_SPEC_URL_"):
+            monkeypatch.delenv(key)
+    sources = {
+        "file:///synthetic/default.json": {"openapi": "3.0.3", "info": {"title": "default"}, "paths": {}},
+        "file:///synthetic/alternate.json": {"openapi": "3.0.3", "info": {"title": "alternate"}, "paths": {}},
+    }
+    monkeypatch.setenv("OPENAPI_SPEC_URL", "file:///synthetic/default.json")
+    monkeypatch.setenv("OPENAPI_SPEC_URL_B", "file:///synthetic/alternate.json")
+    monkeypatch.setattr(fast, "spec", None)
+    monkeypatch.setattr(fast, "_SPEC_SNAPSHOTS", {})
+    monkeypatch.setattr(fast, "_OPERATION_SNAPSHOTS", {})
+    monkeypatch.setattr(fast, "fetch_openapi_spec", lambda url: sources[url])
+    monkeypatch.setattr(fast, "_load_valid_spec", lambda url: sources[url])
+    monkeypatch.setattr(fast, "_FUNCTION_OPERATIONS", {})
+    observed = []
+    monkeypatch.setattr(fast.mcp, "run", lambda **_kwargs: observed.append(json.loads(fast._spec_as_json())))
+    fast.run_simple_server()
+    assert observed[0]["info"]["title"] == "default"
+    assert len(fast._SPEC_SNAPSHOTS) == 2
+    fast.list_functions(env_key="OPENAPI_SPEC_URL_B")
+    assert json.loads(fast._spec_as_json())["info"]["title"] == "default"

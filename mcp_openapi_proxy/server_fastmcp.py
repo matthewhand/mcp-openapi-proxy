@@ -334,7 +334,8 @@ def list_functions(*, env_key: str = "OPENAPI_SPEC_URL", _allow_fetch=True) -> s
     logger.debug('Discovered (details omitted)')
     logger.debug('Functions list (details omitted)')
     global spec, _FUNCTION_OPERATIONS
-    spec = catalog_spec
+    if spec_url == os.environ.get("OPENAPI_SPEC_URL"):
+        spec = catalog_spec
     _SPEC_SNAPSHOTS[spec_url] = catalog_spec
     _FUNCTION_OPERATIONS = operations
     _OPERATION_SNAPSHOTS[spec_url] = operations
