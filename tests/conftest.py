@@ -21,10 +21,14 @@ def reset_env_and_module(request):
         if key.startswith("OPENAPI_SPEC_URL"):
             del os.environ[key]
     os.environ["DEBUG"] = "true"
-    # Reload server_fastmcp to reset tools implicitly
-    if 'mcp_openapi_proxy.server_fastmcp' in sys.modules:
-        del sys.modules['mcp_openapi_proxy.server_fastmcp']
-    import mcp_openapi_proxy.server_fastmcp  # Fresh import re-registers tools
+    # Reset shared catalog state without invalidating functions imported by
+    # test modules during collection. Deleting sys.modules left stale function
+    # globals and could silently pass by exercising the old dummy-spec fallback.
+    from mcp_openapi_proxy import server_fastmcp as fast
+    fast.spec = None
+    fast._FUNCTION_OPERATIONS.clear()
+    fast._SPEC_SNAPSHOTS.clear()
+    fast._OPERATION_SNAPSHOTS.clear()
     yield env_key
     # Restore original env
     os.environ.clear()

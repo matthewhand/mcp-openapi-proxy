@@ -55,9 +55,9 @@ def get_tool_name_max_length() -> Optional[int]:
             parsed_max_length = int(max_length_env)
             if parsed_max_length > 0:
                 return parsed_max_length
-            logger.warning(f"Invalid TOOL_NAME_MAX_LENGTH env var: {max_length_env}. Ignoring.")
+            logger.warning('Invalid TOOL_NAME_MAX_LENGTH env var (details omitted)')
         except ValueError:
-            logger.warning(f"Invalid TOOL_NAME_MAX_LENGTH env var: {max_length_env}. Ignoring.")
+            logger.warning('Invalid TOOL_NAME_MAX_LENGTH env var (details omitted)')
     return None
 
 
@@ -88,10 +88,7 @@ def deduplicate_tool_name(tool_name: str, registered_names) -> str:
         else:
             candidate = f"{tool_name[:max(0, limit - len(suffix))]}{suffix}"
         if candidate not in registered_names:
-            logger.warning(
-                f"Tool name collision for '{tool_name}' (TOOL_NAME_MAX_LENGTH truncation); "
-                f"renamed to '{candidate}'."
-            )
+            logger.warning('Tool name collision for (details omitted)')
             return candidate
         counter += 1
 
@@ -103,7 +100,7 @@ def normalize_tool_name(raw_name: str, max_length: Optional[int] = None) -> str:
     try:
         # Defensive: Only process if raw_name contains a space (method and path)
         if " " not in raw_name:
-            logger.warning(f"Malformed raw tool name received: '{raw_name}'. Returning 'unknown_tool'.")
+            logger.warning('Malformed raw tool name received (details omitted)')
             return "unknown_tool"
         method, path = raw_name.split(" ", 1)
 
@@ -166,16 +163,14 @@ def normalize_tool_name(raw_name: str, max_length: Optional[int] = None) -> str:
 
         # Truncate if necessary
         if original_length > final_limit:
-            logger.warning(
-                f"Tool name '{tool_name}' ({original_length} chars) exceeds {limit_source} limit of {final_limit} chars; truncating."
-            )
+            logger.warning("Tool name exceeds %s limit of %d chars", "protocol" if final_limit == PROTOCOL_MAX_LENGTH else "custom", final_limit)
             tool_name = tool_name[:final_limit]
 
-        logger.info(f"Final tool name: {tool_name}, length: {len(tool_name)}")
+        logger.info("Final tool name registered, length: %d", len(tool_name))
 
         return tool_name
     except Exception as e:
-        logger.error(f"Error normalizing tool name '{raw_name}': {e}", exc_info=True)
+        logger.error('Error normalizing tool name (details omitted)')
         return "unknown_tool" # Return a default on unexpected error
 
 def _spec_cache_path(url: str) -> str:
@@ -205,7 +200,7 @@ def _spec_cache_load(url: str) -> Optional[Dict]:
         if age < _spec_cache_ttl():
             with open(path, "r") as f:
                 spec = json.load(f)
-            logger.debug(f"Spec cache hit for {url} (age {int(age)}s): {path}")
+            logger.debug('Spec cache hit for (details omitted)')
             return spec
     except (OSError, json.JSONDecodeError):
         pass
@@ -220,9 +215,9 @@ def _spec_cache_store(url: str, spec: Dict) -> None:
         with open(path + ".tmp", "w") as f:
             json.dump(spec, f, default=str)
         os.replace(path + ".tmp", path)
-        logger.debug(f"Cached spec for {url} at {path}")
+        logger.debug('Cached spec for (details omitted)')
     except OSError as exc:
-        logger.warning(f"Could not write spec cache: {exc}")
+        logger.warning('Could not write spec cache (details omitted)')
 
 
 def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
@@ -237,7 +232,7 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
     fallback = _spec_cache_load(url)
     if fallback is not None:
         retries = 1  # fail fast to the cached copy instead of retrying for ~30s
-    logger.debug(f"Fetching OpenAPI spec from URL: {url}")
+    logger.debug('Fetching OpenAPI spec from URL (details omitted)')
     attempt = 0
     while attempt < retries:
         try:
@@ -245,62 +240,62 @@ def fetch_openapi_spec(url: str, retries: int = 3) -> Optional[Dict]:
                 with open(url[7:], "r") as f:
                     content = f.read()
                 spec_format = os.getenv("OPENAPI_SPEC_FORMAT", "json").lower()
-                logger.debug(f"Using {spec_format.upper()} parser based on OPENAPI_SPEC_FORMAT env var")
+                logger.debug('Using (details omitted)')
                 if spec_format == "yaml":
                     try:
                         spec = yaml_load_safe(content)
-                        logger.debug(f"Parsed as YAML from {url}")
+                        logger.debug('Parsed as YAML from (details omitted)')
                     except yaml.YAMLError as ye:
-                        logger.error(f"YAML parsing failed: {ye}. Raw content: {content[:500]}...")
+                        logger.error('YAML parsing failed (details omitted)')
                         return None
                 else:
                     try:
                         spec = json.loads(content)
-                        logger.debug(f"Parsed as JSON from {url}")
+                        logger.debug('Parsed as JSON from (details omitted)')
                     except json.JSONDecodeError as je:
-                        logger.error(f"JSON parsing failed: {je}. Raw content: {content[:500]}...")
+                        logger.error('JSON parsing failed (details omitted)')
                         return None
             else:
                 # Check IGNORE_SSL_SPEC env var
                 ignore_ssl_spec = os.getenv("IGNORE_SSL_SPEC", "false").lower() in ("true", "1", "yes")
                 verify_ssl_spec = not ignore_ssl_spec
-                logger.debug(f"Fetching spec with SSL verification: {verify_ssl_spec} (IGNORE_SSL_SPEC={ignore_ssl_spec})")
+                logger.debug("Fetching OpenAPI spec (TLS verification policy applied)")
                 response = requests.get(url, timeout=10, verify=verify_ssl_spec)
                 response.raise_for_status()
                 content = response.text
-                logger.debug(f"Fetched content length: {len(content)} bytes")
+                logger.debug('Fetched content length (details omitted)')
                 try:
                     spec = json.loads(content)
-                    logger.debug(f"Parsed as JSON from {url}")
+                    logger.debug('Parsed as JSON from (details omitted)')
                 except json.JSONDecodeError:
                     try:
                         spec = yaml_load_safe(content)
-                        logger.debug(f"Parsed as YAML from {url}")
+                        logger.debug('Parsed as YAML from (details omitted)')
                     except yaml.YAMLError as ye:
-                        logger.error(f"YAML parsing failed: {ye}. Raw content: {content[:500]}...")
+                        logger.error('YAML parsing failed (details omitted)')
                         return None
             _spec_cache_store(url, spec)
             return spec
         except requests.RequestException as e:
             attempt += 1
-            logger.warning(f"Fetch attempt {attempt}/{retries} failed: {e}")
+            logger.warning('Fetch attempt (details omitted)')
             if attempt == retries:
                 if fallback is not None:
-                    logger.warning(f"Live fetch failed for {url}; serving cached copy.")
+                    logger.warning('Live fetch failed for (details omitted)')
                     return fallback
-                logger.error(f"Failed to fetch spec from {url} after {retries} attempts: {e}")
+                logger.error('Failed to fetch spec from (details omitted)')
                 return None
         except FileNotFoundError as e:
-            logger.error(f"Failed to open local file spec {url}: {e}")
+            logger.error('Failed to open local file spec (details omitted)')
             return None
         except Exception as e:
             attempt += 1
-            logger.warning(f"Unexpected error during fetch attempt {attempt}/{retries}: {e}")
+            logger.warning('Unexpected error during fetch attempt (details omitted)')
             if attempt == retries:
                 if fallback is not None:
-                    logger.warning(f"Live fetch errored for {url}; serving cached copy.")
+                    logger.warning('Live fetch errored for (details omitted)')
                     return fallback
-                logger.error(f"Failed to process spec from {url} after {retries} attempts due to unexpected error: {e}")
+                logger.error('Failed to process spec from (details omitted)')
                 return None
     return None
 
@@ -314,16 +309,16 @@ def build_base_url(spec: Dict) -> Optional[str]:
         urls = [url.strip() for url in override.split(",")]
         for url in urls:
             if url.startswith("http://") or url.startswith("https://"):
-                logger.debug(f"SERVER_URL_OVERRIDE set, using first valid URL: {url}")
+                logger.debug('SERVER_URL_OVERRIDE set using first valid URL (details omitted)')
                 return url
-        logger.error(f"No valid URLs found in SERVER_URL_OVERRIDE: {override}")
+        logger.error('No valid URLs found in SERVER_URL_OVERRIDE (details omitted)')
         return None
     if "servers" in spec and spec["servers"]:
         # Ensure servers is a list and has items before accessing index 0
         if isinstance(spec["servers"], list) and len(spec["servers"]) > 0 and isinstance(spec["servers"][0], dict):
              server_url = spec["servers"][0].get("url")
              if server_url:
-                 logger.debug(f"Using first server URL from spec: {server_url}")
+                 logger.debug('Using first server URL from spec (details omitted)')
                  return server_url
              else:
                  logger.warning("First server entry in spec missing 'url' key.")
@@ -337,7 +332,7 @@ def build_base_url(spec: Dict) -> Optional[str]:
         host = spec.get("host")
         if host:
             v2_url = f"{scheme}://{host}{base_path}"
-            logger.debug(f"Using OpenAPI v2 host/schemes/basePath: {v2_url}")
+            logger.debug('Using OpenAPI v2 host/schemes/basePath (details omitted)')
             return v2_url
         else:
             logger.warning("OpenAPI v2 spec missing 'host'.")
@@ -356,7 +351,7 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
     auth_type = auth_type_raw.lower()
     if api_key:
         if auth_type == "bearer":
-            logger.debug(f"Using API_KEY as Bearer token.") # Avoid logging key prefix
+            logger.debug("API authentication configured (values omitted)") # Avoid logging key prefix
             headers["Authorization"] = f"Bearer {api_key}"
         elif auth_type == "basic":
             logger.warning("API_AUTH_TYPE is Basic, but Basic Auth is not fully implemented yet.")
@@ -368,14 +363,14 @@ def handle_auth(operation: Dict) -> Dict[str, str]:
                 # send "Authorization: Api-Key <key>" preserving the scheme.
                 # Lowercase `api-key` keeps the raw-key behavior (x-apikey style).
                 headers[key_name] = f"{auth_type_raw} {api_key}"
-                logger.debug(f"Using API_KEY with scheme '{auth_type_raw}' in header '{key_name}'.")
+                logger.debug("Using API_KEY with scheme ' (details omitted)")
             else:
                 headers[key_name] = api_key
-                logger.debug(f"Using API_KEY as API-Key in header '{key_name}'.") # Avoid logging key prefix
+                logger.debug("Using API_KEY as API-Key in header ' (details omitted)") # Avoid logging key prefix
         elif auth_type:
             # Custom scheme prefix, e.g. API_AUTH_TYPE=Token for NetBox -> "Authorization: Token <key>"
             headers["Authorization"] = f"{auth_type_raw} {api_key}"
-            logger.debug(f"Using API_KEY with custom auth scheme '{auth_type_raw}'.")
+            logger.debug("API authentication configured (values omitted)")
     # TODO: Add logic to check operation['security'] and spec['components']['securitySchemes']
     #       to potentially override or supplement env var based auth.
     return headers
@@ -387,13 +382,13 @@ def strip_parameters(parameters: Dict) -> Dict:
     strip_param = os.getenv("STRIP_PARAM")
     if not strip_param or not isinstance(parameters, dict):
         return parameters
-    logger.debug(f"Raw parameters before stripping '{strip_param}': {parameters}")
+    logger.debug('Raw parameters before stripping (details omitted)')
     result = parameters.copy()
     if strip_param in result:
         del result[strip_param]
-        logger.debug(f"Stripped '{strip_param}'. Parameters after stripping: {result}")
+        logger.debug('Stripped (details omitted)')
     else:
-        logger.debug(f"Parameter '{strip_param}' not found, no stripping performed.")
+        logger.debug('Parameter (details omitted)')
     return result
 
 # Corrected function signature and implementation
@@ -427,8 +422,8 @@ def detect_response_type(response_text: str) -> Tuple[types.TextContent, str]:
         return types.TextContent(type="text", text=response_text.strip()), "Non-JSON text response"
     except Exception as e:
         # Catch unexpected errors during detection
-        logger.error(f"Error detecting response type: {e}", exc_info=True)
-        return types.TextContent(type="text", text=f"Error detecting response type: {response_text[:100]}..."), "Error during response detection"
+        logger.error('Error detecting response type (details omitted)')
+        return types.TextContent(type="text", text="Error detecting response type"), "Error during response detection"
 
 
 def get_additional_headers() -> Dict[str, str]:
@@ -450,7 +445,7 @@ def get_additional_headers() -> Dict[str, str]:
     extra_headers = os.getenv("EXTRA_HEADERS")
     if not extra_headers:
         return headers
-    logger.debug(f"Parsing EXTRA_HEADERS: {extra_headers}")
+    logger.debug('Parsing EXTRA_HEADERS (details omitted)')
 
     candidate = extra_headers.strip()
     lines: List[str]
@@ -462,8 +457,7 @@ def get_additional_headers() -> Dict[str, str]:
                 raise ValueError("EXTRA_HEADERS JSON must be an array of strings")
             lines = [str(item) for item in parsed]
         except (json.JSONDecodeError, ValueError) as exc:
-            logger.warning(f"EXTRA_HEADERS looked like JSON but failed to parse ({exc}); "
-                           "falling back to newline parsing.")
+            logger.warning('EXTRA_HEADERS looked like JSON but failed to parse (details omitted)')
             lines = extra_headers.replace("\\n", "\n").splitlines()
     else:
         # Forms 2 & 3: real newlines and/or literal "\n" sequences.
@@ -476,11 +470,11 @@ def get_additional_headers() -> Dict[str, str]:
             key, value = key.strip(), value.strip()
             if key and value:
                 headers[key] = value
-                logger.debug(f"Added header from EXTRA_HEADERS: '{key}'")
+                logger.debug('Added header from EXTRA_HEADERS (details omitted)')
             else:
-                logger.warning(f"Skipping invalid header in EXTRA_HEADERS: '{line}'")
+                logger.warning('Skipping invalid header in EXTRA_HEADERS (details omitted)')
         elif line:
-            logger.warning(f"Skipping malformed header in EXTRA_HEADERS (no ':'): '{line}'")
+            logger.warning('Skipping malformed header in EXTRA_HEADERS no (details omitted)')
     return headers
 
 def is_tool_whitelist_set() -> bool:
@@ -520,10 +514,10 @@ def is_tool_whitelisted(endpoint: str) -> bool:
             pattern = "^" + pattern_str + "($|/.*)"
             try:
                 if re.match(pattern, normalized_endpoint):
-                    logger.debug(f"Endpoint '{normalized_endpoint}' matches whitelist pattern '{pattern}' from entry '{entry}'")
+                    logger.debug('Endpoint (details omitted)')
                     return True
             except re.error as e:
-                 logger.error(f"Invalid regex pattern generated from whitelist entry '{entry}': {pattern}. Error: {e}")
+                 logger.error('Invalid regex pattern generated from whitelist entry (details omitted)')
                  continue # Skip this invalid pattern
         elif normalized_endpoint.startswith(normalized_entry):
              # Simple prefix match (e.g., /users allows /users/123).
@@ -532,8 +526,8 @@ def is_tool_whitelisted(endpoint: str) -> bool:
              if (normalized_endpoint == normalized_entry
                      or normalized_endpoint.startswith(normalized_entry + "/")
                      or normalized_endpoint.startswith(normalized_entry + ".")):
-                  logger.debug(f"Endpoint '{normalized_endpoint}' matches whitelist prefix '{normalized_entry}' from entry '{entry}'")
+                  logger.debug('Endpoint (details omitted)')
                   return True
 
-    logger.debug(f"Endpoint '{normalized_endpoint}' not found in TOOL_WHITELIST.")
+    logger.debug('Endpoint (details omitted)')
     return False

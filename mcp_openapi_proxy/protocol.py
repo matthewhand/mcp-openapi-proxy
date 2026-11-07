@@ -295,8 +295,9 @@ class McpRpcLogMiddleware:
     are never logged.
     """
 
-    def __init__(self, app: Any):
+    def __init__(self, app: Any, known_tool_names=None):
         self.app = app
+        self.known_tool_names = known_tool_names
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         if scope.get("type") != "http" or scope.get("method") != "POST":
@@ -304,6 +305,9 @@ class McpRpcLogMiddleware:
             return
         body, replay = await _buffer_http_body(receive)
         method, name = inbound_rpc_identity(_try_json_rpc(body), _asgi_header_map(scope))
+        if (name is not None and self.known_tool_names is not None
+                and name not in self.known_tool_names()):
+            name = None
         log_inbound_rpc(method, name)
         await self.app(scope, replay, send)
 

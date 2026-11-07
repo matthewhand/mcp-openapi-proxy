@@ -39,7 +39,7 @@ def main():
     try:
         selected_server()
     except Exception as e:
-        logger.critical("Unhandled exception occurred while running the server.", exc_info=True)
+        logger.critical('Unhandled exception occurred while running the server (details omitted)')
         sys.exit(1)
 
 if __name__ == "__main__":

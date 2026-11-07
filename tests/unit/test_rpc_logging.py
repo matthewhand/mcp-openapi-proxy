@@ -119,6 +119,7 @@ def test_http_logs_list_and_call_without_secrets(spec_env, monkeypatch, caplog):
     import requests
 
     class Dummy:
+        status_code = 200
         text = '{"pong": true}'
 
         def raise_for_status(self):
@@ -202,3 +203,43 @@ def test_http_logs_method_from_body_without_mcp_headers(spec_env, caplog):
 
     messages = [r.message for r in caplog.records if r.message.startswith("mcp rpc ")]
     assert messages == ["mcp rpc method=tools/list"]
+
+@pytest.mark.asyncio
+async def test_application_rpc_logging_omits_unknown_tool_names(caplog):
+    import logging
+    from mcp_openapi_proxy.protocol import McpRpcLogMiddleware
+    async def app(scope, receive, send):
+        await receive()
+    middleware = McpRpcLogMiddleware(app, known_tool_names=lambda: {"get_safe"})
+    async def invoke(name):
+        body = json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call",
+                           "params":{"name":name,"arguments":{}}}).encode()
+        async def receive():
+            return {"type":"http.request","body":body,"more_body":False}
+        async def send(message):
+            pass
+        await middleware({"type":"http","method":"POST","headers":[]},receive,send)
+    with caplog.at_level(logging.INFO,logger="mcp_openapi_proxy"):
+        await invoke("get_safe")
+        await invoke("SYNTHETIC_PRIVATE_UNKNOWN_TOOL_NAME")
+    assert "name=get_safe" in caplog.text
+    assert "SYNTHETIC_PRIVATE_UNKNOWN_TOOL_NAME" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("module_name", ["mcp_openapi_proxy.handlers", "mcp_openapi_proxy.server_lowlevel"])
+async def test_dispatcher_unpack_failure_is_sanitized(module_name, caplog):
+    import importlib
+
+    class BrokenRequest:
+        @property
+        def params(self):
+            raise ValueError("SYNTHETIC_PRIVATE_REQUEST_CANARY")
+
+    module = importlib.import_module(module_name)
+    with caplog.at_level(logging.DEBUG, logger="mcp_openapi_proxy"):
+        result = await module.dispatcher_handler(BrokenRequest())
+    assert result.is_error
+    assert result.content[0].text == "Internal processing failed"
+    assert "SYNTHETIC_PRIVATE_REQUEST_CANARY" not in caplog.text
+    assert "SYNTHETIC_PRIVATE_REQUEST_CANARY" not in str(result)

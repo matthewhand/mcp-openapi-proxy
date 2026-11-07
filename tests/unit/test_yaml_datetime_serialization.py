@@ -5,6 +5,8 @@ import json
 import os
 
 import yaml
+import pytest
+import importlib
 
 
 def test_yaml_load_safe_keeps_timestamp_as_string():
@@ -16,8 +18,9 @@ def test_yaml_load_safe_keeps_timestamp_as_string():
                       datetime.datetime)
 
 
-def test_fetch_yaml_spec_with_datetime_is_json_serializable(tmp_path, monkeypatch):
-    from mcp_openapi_proxy.utils import fetch_openapi_spec
+@pytest.mark.parametrize("module_name", ["mcp_openapi_proxy.utils", "mcp_openapi_proxy.openapi"])
+def test_fetch_yaml_spec_with_datetime_is_json_serializable(tmp_path, monkeypatch, module_name):
+    fetch_openapi_spec = importlib.import_module(module_name).fetch_openapi_spec
     spec = (
         "openapi: 3.0.0\n"
         "info: {title: dt, version: 1.0.0}\n"
@@ -61,7 +64,7 @@ def test_fastmcp_spec_resource_serializes_datetime(monkeypatch):
     monkeypatch.setenv("OPENAPI_SPEC_URL", "http://example.invalid/s.yaml")
     monkeypatch.setattr(
         sf, "fetch_openapi_spec",
-        lambda url: {"openapi": "3.0.0", "x": datetime.datetime(2015, 2, 22, 20, 0, 45)},
+        lambda url: {"openapi": "3.0.0", "paths": {}, "x": datetime.datetime(2015, 2, 22, 20, 0, 45)},
     )
     parsed = json.loads(sf._spec_as_json())  # must be valid JSON, no crash
     assert parsed["x"]  # datetime stringified, not dropped
@@ -71,7 +74,7 @@ def test_fastmcp_resource_uses_preloaded_spec_no_refetch(monkeypatch):
     """resources/read must serve the preloaded in-memory spec, NOT re-fetch the
     network on every read — respecting the live-first-once spec lifecycle (#28)."""
     from mcp_openapi_proxy import server_fastmcp as sf
-    monkeypatch.setattr(sf, "spec", {"openapi": "3.0.0", "info": {"title": "preloaded"}})
+    monkeypatch.setattr(sf, "spec", {"openapi": "3.0.0", "paths": {}, "info": {"title": "preloaded"}})
 
     def _boom(url):
         raise AssertionError("resources/read re-fetched the network instead of using preloaded spec")
