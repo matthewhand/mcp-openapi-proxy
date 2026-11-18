@@ -10,6 +10,11 @@ import sys
 import asyncio
 import json
 import requests
+import time
+from mcp_openapi_proxy.bounded_http import bounded_request_async
+from mcp_openapi_proxy.request_security import RedirectRefused
+from mcp_openapi_proxy.privacy_diagnostics import log_http_event
+from mcp_openapi_proxy.path_safety import safe_url, validate_path_arguments
 from typing import List, Dict, Any, Optional, cast
 import anyio
 
@@ -206,67 +211,62 @@ async def ensure_spec_loaded() -> Optional[Dict[str, Any]]:
         openapi_url = os.getenv("OPENAPI_SPEC_URL")
         if not openapi_url:
             _spec_load_error = "OPENAPI_SPEC_URL not set"
-            logger.critical(_spec_load_error)
+            logger.critical('Proxy operation (details omitted)')
             return None
-        logger.debug(f"Lazily fetching OpenAPI spec from {openapi_url}...")
+        logger.debug('Lazily fetching OpenAPI spec from (details omitted)')
         spec = await anyio.to_thread.run_sync(fetch_openapi_spec, openapi_url)
         if not spec:
             _spec_load_error = f"Failed to fetch or parse OpenAPI spec from {openapi_url}"
-            logger.critical(_spec_load_error)
+            logger.critical('Proxy operation (details omitted)')
             return None
         openapi_spec_data = spec
         if ENABLE_TOOLS:
             from mcp_openapi_proxy.handlers import register_functions
             register_functions(spec)
-            logger.debug(f"Tools registered lazily: {[tool.name for tool in tools]}")
+            logger.debug('Tools registered lazily (details omitted)')
             if not tools:
                 logger.critical("No valid tools registered from spec.")
         return openapi_spec_data
 
 
 async def dispatcher_handler(ctx_or_request: Any, params: Any = None) -> mcp_types.CallToolResult:
-    """Route tools/call to the matching OpenAPI operation.
-
-    Signature is MCP SDK v2 ``(ctx, params)``. A single request-like object
-    (with ``.params``) is still accepted for tests and gateway wrappers.
+    """
+    Dispatcher handler that routes CallToolRequest to the appropriate function (tool).
     """
     global openapi_spec_data
-    _, params = unpack_handler_args(ctx_or_request, params)
     try:
+        _, params = unpack_handler_args(ctx_or_request, params)
         await ensure_spec_loaded()
         function_name = params.name
-        logger.debug(f"Dispatcher received CallToolRequest for function: {function_name}")
-        logger.debug(f"API_KEY: {os.getenv('API_KEY', '<not set>')[:5] + '...' if os.getenv('API_KEY') else '<not set>'}")
-        logger.debug(f"STRIP_PARAM: {os.getenv('STRIP_PARAM', '<not set>')}")
+        logger.debug('Dispatcher received CallToolRequest for function (details omitted)')
+        logger.debug('API_KEY (details omitted)')
+        logger.debug('STRIP_PARAM (details omitted)')
         tool = next((t for t in tools if t.name == function_name), None)
         if not tool:
-            logger.error(f"Unknown function requested: {function_name}")
+            logger.error('Unknown function requested (details omitted)')
             return mcp_types.CallToolResult(
                 content=[mcp_types.TextContent(type="text", text="Unknown function requested")],
-                is_error=False,
+                is_error=True,
             )
         arguments = params.arguments or {}
-        logger.debug(f"Raw arguments before processing: {arguments}")
-        # Opt-in audit trail (MCP_LOG_RAW_COMMANDS): the verbatim shell command,
-        # emitted before it runs. Off by default; arguments are never logged
-        # otherwise. Deliberately placed before the spec lookup / upstream POST
-        # so the record covers commands that fail downstream too.
         log_raw_command(function_name, arguments)
+        logger.debug('Raw arguments before processing (details omitted)')
 
         if openapi_spec_data is None:
             return mcp_types.CallToolResult(
                 content=[mcp_types.TextContent(type="text", text="OpenAPI spec not loaded")],
                 is_error=True,
             )
+        # Since we've checked openapi_spec_data is not None, cast it to Dict.
         operation_details = lookup_operation_details(function_name, cast(Dict, openapi_spec_data))
         if not operation_details:
-            logger.error(f"Could not find OpenAPI operation for function: {function_name}")
+            logger.error('Could not find OpenAPI operation for function (details omitted)')
             return mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text=f"Could not find OpenAPI operation for function: {function_name}")],
-                is_error=False,
+                content=[mcp_types.TextContent(type="text", text="Could not find OpenAPI operation for function")],
+                is_error=True,
             )
 
-        operation = operation_details["operation"]
+        operation = dict(operation_details["operation"])
         operation["method"] = operation_details["method"]
         headers = handle_auth(operation)
         additional_headers = get_additional_headers()
@@ -277,32 +277,30 @@ async def dispatcher_handler(ctx_or_request: Any, params: Any = None) -> mcp_typ
             headers["Content-Type"] = "application/json"
 
         path = operation_details["path"]
-        try:
-            path = path.format(**parameters)
-            logger.debug(f"Substituted path using format(): {path}")
-            placeholder_keys = [
-                seg.strip("{}")
-                for seg in operation_details["original_path"].split("/")
-                if seg.startswith("{") and seg.endswith("}")
-            ]
-            for key in placeholder_keys:
-                parameters.pop(key, None)
-        except KeyError as e:
-            logger.error(f"Missing parameter for substitution: {e}")
+        original_path = operation_details["original_path"]
+        if not is_tool_whitelisted(original_path):
             return mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text=f"Missing parameter: {e}")],
-                is_error=False,
+                content=[mcp_types.TextContent(type="text", text="Operation not authorized")],
+                is_error=True,
             )
-
         base_url = build_base_url(cast(Dict, openapi_spec_data))
         if not base_url:
             logger.critical("Failed to construct base URL from spec or SERVER_URL_OVERRIDE.")
             return mcp_types.CallToolResult(
                 content=[mcp_types.TextContent(type="text", text="No base URL defined in spec or SERVER_URL_OVERRIDE")],
-                is_error=False,
+                is_error=True,
             )
-
-        api_url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+        try:
+            path_item = openapi_spec_data.get("paths", {}).get(original_path, {})
+            verified = validate_path_arguments(path, parameters, operation, path_item, openapi_spec_data)
+            api_url, used_path_parameters = safe_url(base_url, path, verified)
+        except (ValueError, TypeError):
+            return mcp_types.CallToolResult(
+                content=[mcp_types.TextContent(type="text", text="Invalid or unsafe path parameters")],
+                is_error=True,
+            )
+        for key in used_path_parameters:
+            parameters.pop(key, None)
         request_params = {}
         request_body = None
         if isinstance(parameters, dict):
@@ -320,10 +318,10 @@ async def dispatcher_handler(ctx_or_request: Any, params: Any = None) -> mcp_typ
                     if param.get("in") == "path" and param.get("required", False) and param["name"] not in arguments
                 ]
                 if missing_required:
-                    logger.error(f"Missing required path parameters: {missing_required}")
+                    logger.error('Missing required path parameters (details omitted)')
                     return mcp_types.CallToolResult(
-                        content=[mcp_types.TextContent(type="text", text=f"Missing required path parameters: {missing_required}")],
-                        is_error=False,
+                        content=[mcp_types.TextContent(type="text", text="Missing required path parameters")],
+                        is_error=True,
                     )
             if method == "GET":
                 request_params = parameters
@@ -332,15 +330,22 @@ async def dispatcher_handler(ctx_or_request: Any, params: Any = None) -> mcp_typ
         else:
             logger.debug("No valid parameters provided, proceeding without params/body")
 
-        logger.debug(f"API Request - URL: {api_url}, Method: {method}")
-        logger.debug(f"Headers: {headers}")
-        logger.debug(f"Query Params: {request_params}")
-        logger.debug(f"Request Body: {request_body}")
+        logger.debug('API Request - URL (details omitted)')
+        logger.debug('Headers (details omitted)')
+        logger.debug('Query Params (details omitted)')
+        logger.debug('Request Body (details omitted)')
 
         try:
             ignore_ssl_tools = os.getenv("IGNORE_SSL_TOOLS", "false").lower() in ("true", "1", "yes")
             verify_ssl_tools = not ignore_ssl_tools
-            response = requests.request(
+            if not is_tool_whitelisted(original_path):
+                return mcp_types.CallToolResult(
+                    content=[mcp_types.TextContent(type="text", text="Operation no longer authorized")],
+                    is_error=True,
+                )
+            request_started = time.monotonic()
+            log_http_event("sending", method=method)
+            response = await bounded_request_async(
                 method=method,
                 url=api_url,
                 headers=headers,
@@ -349,23 +354,27 @@ async def dispatcher_handler(ctx_or_request: Any, params: Any = None) -> mcp_typ
                 verify=verify_ssl_tools,
             )
             response.raise_for_status()
+            log_http_event("completed", method=method,
+                           status=getattr(response, "status_code", None),
+                           started=request_started)
             response_text = (response.text or "No response body").strip()
             content, log_message = detect_response_type(response_text)
             logger.debug(log_message)
+            # Expect content to be of a type that can be included as is.
             final_content = [content]
         except requests.exceptions.RequestException as e:
-            logger.error(f"API request failed: {e}")
+            logger.error('API request failed (details omitted)')
             return mcp_types.CallToolResult(
-                content=[mcp_types.TextContent(type="text", text=str(e))],
-                is_error=False,
+                content=[mcp_types.TextContent(type="text", text=("Upstream redirect refused" if isinstance(e, RedirectRefused) else "Upstream request failed"))],
+                is_error=True,
             )
-        logger.debug(f"Response content type: {content.type}")
-        logger.debug(f"Response sent to client: {content.text}")
+        logger.debug('Response content type (details omitted)')
+        logger.debug('Response sent to client (details omitted)')
         return mcp_types.CallToolResult(content=final_content, is_error=False)
     except Exception as e:
-        logger.error(f"Unhandled exception in dispatcher_handler: {e}", exc_info=True)
+        logger.error('Unhandled exception in dispatcher_handler (details omitted)')
         return mcp_types.CallToolResult(
-            content=[mcp_types.TextContent(type="text", text=f"Internal error: {str(e)}")],
+            content=[mcp_types.TextContent(type="text", text="Internal processing failed")],
             is_error=True,
         )
 
@@ -373,12 +382,12 @@ async def dispatcher_handler(ctx_or_request: Any, params: Any = None) -> mcp_typ
 async def list_tools(ctx_or_request: Any = None, params: Any = None) -> mcp_types.ListToolsResult:
     logger.debug("Handling list_tools request - start")
     await ensure_spec_loaded()
-    logger.debug(f"Tools list length: {len(tools)}")
+    logger.debug('Tools list length (details omitted)')
     return mcp_types.ListToolsResult(tools=tools)
 
 
 async def list_resources(ctx_or_request: Any = None, params: Any = None) -> mcp_types.ListResourcesResult:
-    logger.debug(f"Handling list_resources request ({len(resources)} resources)")
+    logger.debug('Handling list_resources request ( (details omitted)')
     if not resources:
         logger.debug("Resources empty; repopulating default resource")
         resources.append(
@@ -394,15 +403,17 @@ async def list_resources(ctx_or_request: Any = None, params: Any = None) -> mcp_
 async def read_resource(ctx_or_request: Any, params: Any = None) -> mcp_types.ReadResourceResult:
     _, params = unpack_handler_args(ctx_or_request, params)
     uri_str = str(params.uri)
-    logger.debug(f"START read_resource for URI: {uri_str}")
+    if uri_str not in {str(item.uri) for item in resources} | {"file:///openapi_spec.json"}:
+        raise ValueError("Resource not found")
+    logger.debug('START read_resource for URI (details omitted)')
     try:
         for name, path in ADDITIONAL_RESOURCES.items():
             if uri_str == f"file:///{name}":
                 try:
                     with open(path, "r", encoding="utf-8") as f:
                         text = f.read()
-                except OSError as exc:
-                    text = f"Resource '{name}' unavailable: {exc}"
+                except OSError:
+                    text = "Resource unavailable"
                 mime = "text/markdown" if path.endswith((".md", ".markdown")) else "text/plain"
                 return mcp_types.ReadResourceResult(
                     contents=[
@@ -412,7 +423,7 @@ async def read_resource(ctx_or_request: Any, params: Any = None) -> mcp_types.Re
                     ]
                 )
         openapi_url = os.getenv("OPENAPI_SPEC_URL")
-        logger.debug(f"Got OPENAPI_SPEC_URL: {openapi_url}")
+        logger.debug('Got OPENAPI_SPEC_URL (details omitted)')
         if not openapi_url:
             logger.error("OPENAPI_SPEC_URL not set")
             return mcp_types.ReadResourceResult(
@@ -425,7 +436,7 @@ async def read_resource(ctx_or_request: Any, params: Any = None) -> mcp_types.Re
             )
         logger.debug("Fetching spec...")
         spec_data = fetch_openapi_spec(openapi_url)
-        logger.debug(f"Spec fetched: {spec_data is not None}")
+        logger.debug('Spec fetched (details omitted)')
         if not spec_data:
             logger.error("Failed to fetch OpenAPI spec")
             return mcp_types.ReadResourceResult(
@@ -438,7 +449,7 @@ async def read_resource(ctx_or_request: Any, params: Any = None) -> mcp_types.Re
             )
         logger.debug("Dumping spec to JSON...")
         spec_json = json.dumps(spec_data, indent=2, default=str)
-        logger.debug(f"Forcing spec JSON return: {spec_json[:50]}...")
+        logger.debug('Forcing spec JSON return (details omitted)')
         return mcp_types.ReadResourceResult(
             contents=[
                 mcp_types.TextResourceContents(
@@ -449,12 +460,12 @@ async def read_resource(ctx_or_request: Any, params: Any = None) -> mcp_types.Re
             ]
         )
     except Exception as e:
-        logger.error(f"Error forcing resource: {e}", exc_info=True)
+        logger.error('Error forcing resource (details omitted)')
         return mcp_types.ReadResourceResult(
             contents=[
                 mcp_types.TextResourceContents(
                     uri=uri_str,
-                    text=f"Resource error: {str(e)}"
+                    text="Resource operation failed"
                 )
             ]
         )
@@ -462,7 +473,7 @@ async def read_resource(ctx_or_request: Any, params: Any = None) -> mcp_types.Re
 
 async def list_prompts(ctx_or_request: Any = None, params: Any = None) -> mcp_types.ListPromptsResult:
     logger.debug("Handling list_prompts request")
-    logger.debug(f"Prompts list length: {len(prompts)}")
+    logger.debug('Prompts list length (details omitted)')
     return mcp_types.ListPromptsResult(prompts=prompts)
 
 
@@ -478,7 +489,7 @@ async def get_prompt(ctx_or_request: Any, params: Any = None) -> mcp_types.GetPr
             messages=[
                 mcp_types.PromptMessage(
                     role="assistant",
-                    content=mcp_types.TextContent(type="text", text=f"Prompt '{name}' not found"),
+                    content=mcp_types.TextContent(type="text", text="Prompt not found"),
                 )
             ],
         )
@@ -487,41 +498,24 @@ async def get_prompt(ctx_or_request: Any, params: Any = None) -> mcp_types.GetPr
         logger.debug("MCP prompt messages generated")
         return mcp_types.GetPromptResult(messages=messages)
     except Exception as e:
-        logger.error("MCP prompt generation failed (%s)", type(e).__name__)
+        logger.error('MCP prompt generation failed (%s) (details omitted)')
         return mcp_types.GetPromptResult(
             messages=[
                 mcp_types.PromptMessage(
                     role="assistant",
-                    content=mcp_types.TextContent(type="text", text=f"Prompt error: {str(e)}"),
+                    content=mcp_types.TextContent(type="text", text="Prompt operation failed"),
                 )
             ],
         )
 
 
 def lookup_operation_details(function_name: str, spec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    from mcp_openapi_proxy.openapi import lookup_operation_details as lookup
     from mcp_openapi_proxy.openapi import _REGISTERED_OPERATIONS
-    registered = _REGISTERED_OPERATIONS.get(function_name)
-    if registered:
-        return dict(registered)
-    # Stateless rebuild: a fresh instance (or a round-robin peer) that never
-    # saw tools/list can still resolve a name by registering from the spec.
     if spec and not _REGISTERED_OPERATIONS:
         from mcp_openapi_proxy.handlers import register_functions
         register_functions(spec)
-        registered = _REGISTERED_OPERATIONS.get(function_name)
-        if registered:
-            return dict(registered)
-    if not spec or 'paths' not in spec:
-        return None
-    for path, path_item in spec['paths'].items():
-        for method, operation in path_item.items():
-            if method.lower() not in ['get', 'post', 'put', 'delete', 'patch']:
-                continue
-            raw_name = f"{method.upper()} {path}"
-            current_function_name = normalize_tool_name(raw_name)
-            if current_function_name == function_name:
-                return {"path": path, "method": method.upper(), "operation": operation, "original_path": path}
-    return None
+    return lookup(function_name, spec)
 
 
 def _is_closed_stream_error(exc: BaseException) -> bool:
@@ -559,7 +553,7 @@ def build_server() -> Server:
     if ENABLE_PROMPTS:
         kwargs["on_list_prompts"] = list_prompts
         kwargs["on_get_prompt"] = get_prompt
-    logger.debug(f"Building MCP server identity name={name!r} title={title!r}")
+    logger.debug('Building MCP server identity name (details omitted)')
     return Server(name, **kwargs)
 
 
@@ -593,7 +587,7 @@ async def start_server():
                 if _is_closed_stream_error(e):
                     logger.warning("Client closed the stream; shutting down cleanly.")
                     break
-                logger.error(f"MCP run crashed: {e}", exc_info=True)
+                logger.error('MCP run crashed (details omitted)')
                 await anyio.sleep(1)
     prewarm.cancel()
 
@@ -616,7 +610,7 @@ def build_streamable_http_app(*, host: Optional[str] = None, path: Optional[str]
         host=host or mcp_host(),
         custom_starlette_routes=[healthz_route()],
     )
-    app.add_middleware(McpRpcLogMiddleware)
+    app.add_middleware(McpRpcLogMiddleware, known_tool_names=lambda: {tool.name for tool in tools})
     return app
 
 
@@ -627,10 +621,7 @@ def _run_streamable_http() -> None:
     host = mcp_host()
     port = mcp_port()
     path = mcp_path()
-    logger.debug(
-        "Starting Low-Level MCP server (streamable-http, stateless) "
-        f"on {host}:{port}{path}"
-    )
+    logger.debug('Starting Low-Level MCP server (streamable-http, stateless) on (details omitted)')
     app = build_streamable_http_app(host=host, path=path)
     uvicorn.run(app, host=host, port=port)
 
@@ -651,7 +642,7 @@ def run_server():
     except KeyboardInterrupt:
         logger.debug("MCP server shutdown initiated by user.")
     except Exception as e:
-        logger.critical(f"Failed to start MCP server: {e}", exc_info=True)
+        logger.critical('Failed to start MCP server (details omitted)')
         sys.exit(1)
 
 

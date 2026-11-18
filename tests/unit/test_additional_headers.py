@@ -35,6 +35,7 @@ def mock_env(monkeypatch):
 def mock_requests(monkeypatch):
     def mock_request(method, url, **kwargs):
         class MockResponse:
+            status_code = 200
             def __init__(self):
                 self.text = "Mocked response"
             def raise_for_status(self):
@@ -103,7 +104,7 @@ def test_fastmcp_call_function_with_headers(mock_env, mock_requests):
     with patch('mcp_openapi_proxy.server_fastmcp.fetch_openapi_spec', return_value=DUMMY_SPEC):
         from types import SimpleNamespace
         with patch('mcp_openapi_proxy.utils.normalize_tool_name', side_effect=lambda raw_name: "get_test"), \
-             patch('mcp_openapi_proxy.server_fastmcp.requests.request', return_value=SimpleNamespace(text='"Mocked response"', raise_for_status=lambda: None)):
+             patch('mcp_openapi_proxy.server_fastmcp.requests.request', return_value=SimpleNamespace(status_code=200, text='"Mocked response"', raise_for_status=lambda: None)):
             result = server_fastmcp.call_function(function_name="get_test", parameters={}, env_key="OPENAPI_SPEC_URL")
             print(f"DEBUG: Call function result: {result}")
     assert json.loads(result) == "Mocked response", "Call function failed with headers"

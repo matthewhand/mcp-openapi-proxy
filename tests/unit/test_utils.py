@@ -172,7 +172,7 @@ def test_tool_name_max_length_invalid(monkeypatch, caplog):
     monkeypatch.setenv("TOOL_NAME_MAX_LENGTH", "abc")
     tool_name = normalize_tool_name("GET /users/list")
     assert tool_name == "get_users_list"
-    assert any("Invalid TOOL_NAME_MAX_LENGTH env var: abc" in r.message for r in caplog.records)
+    assert any("Invalid TOOL_NAME_MAX_LENGTH env var" in r.message for r in caplog.records)
     # monkeypatch handles cleanup automatically
 
 def test_tool_name_with_path_param(monkeypatch):

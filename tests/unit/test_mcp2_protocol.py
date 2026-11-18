@@ -84,6 +84,7 @@ async def test_call_tool_no_session(spec_env, monkeypatch):
     import requests
 
     class Dummy:
+        status_code = 200
         text = '{"ok": true}'
         def raise_for_status(self):
             return None
@@ -118,6 +119,7 @@ def test_fastmcp_two_step_uses_explicit_handle(spec_env, monkeypatch):
     import requests
 
     class Dummy:
+        status_code = 200
         text = '{"ok": true}'
         def raise_for_status(self):
             return None
@@ -183,6 +185,7 @@ def test_http_tools_call_no_prior_handshake(spec_env, monkeypatch):
     import requests
 
     class Dummy:
+        status_code = 200
         text = '{"pong": true}'
         def raise_for_status(self):
             return None

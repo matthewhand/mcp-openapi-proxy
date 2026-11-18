@@ -76,6 +76,6 @@ def test_fastmcp_read_resource_valid(mock_env):
     from unittest.mock import patch
     fm.types = t
     with patch("mcp_openapi_proxy.server_fastmcp.spec", new=None):
-        with patch("mcp_openapi_proxy.server_fastmcp.fetch_openapi_spec", return_value={"dummy": "spec"}):
+        with patch("mcp_openapi_proxy.server_fastmcp.fetch_openapi_spec", return_value={"openapi":"3.0.3", "paths": {}, "info":{"title":"synthetic"}}):
             result = call_function(function_name="read_resource", parameters={"uri": "file:///openapi_spec.json"}, env_key="OPENAPI_SPEC_URL")
-            assert json.loads(result) == {"dummy": "spec"}, "Expected spec JSON"
+            assert json.loads(result)["paths"] == {}, "Expected real spec JSON"

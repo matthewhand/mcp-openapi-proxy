@@ -97,7 +97,7 @@ def test_invalid_tool_name_max_length(monkeypatch, caplog):
     raw_name = "GET /users/list" # Short name, won't be truncated
     tool_name = normalize_tool_name(raw_name)
     assert tool_name == "get_users_list", f"Expected get_users_list, got {tool_name}"
-    assert any("Invalid TOOL_NAME_MAX_LENGTH env var: abc" in r.message for r in caplog.records), \
+    assert any("Invalid TOOL_NAME_MAX_LENGTH env var" in r.message for r in caplog.records), \
         "Expected warning for invalid TOOL_NAME_MAX_LENGTH 'abc'"
 
     # Clear previous logs for the next check
@@ -105,7 +105,7 @@ def test_invalid_tool_name_max_length(monkeypatch, caplog):
     monkeypatch.setenv("TOOL_NAME_MAX_LENGTH", "-1")
     tool_name = normalize_tool_name(raw_name)
     assert tool_name == "get_users_list", f"Expected get_users_list, got {tool_name}"
-    assert any("Invalid TOOL_NAME_MAX_LENGTH env var: -1" in r.message for r in caplog.records), \
+    assert any("Invalid TOOL_NAME_MAX_LENGTH env var" in r.message for r in caplog.records), \
         "Expected warning for negative TOOL_NAME_MAX_LENGTH '-1'"
 
 def test_malformed_raw_name(caplog):
@@ -158,7 +158,7 @@ def test_custom_limit_exceeds_protocol(monkeypatch, caplog):
     assert len(tool_name) == 64, f"Expected 64 chars, got {len(tool_name)}: {tool_name}"
     assert tool_name == expected_name, f"Expected {expected_name}, got {tool_name}"
     # Check that the log message indicates the protocol limit was the effective one
-    assert any("exceeds protocol (custom limit was 65) limit of 64 chars" in r.message for r in caplog.records), \
+    assert any("exceeds protocol limit of 64 chars" in r.message for r in caplog.records), \
         "Expected warning log indicating protocol limit override"
 
 
@@ -170,7 +170,7 @@ def test_custom_limit_logging(monkeypatch, caplog):
     monkeypatch.setenv("TOOL_NAME_MAX_LENGTH", "50")
     raw_name = LONG_RAW_NAME # 72 chars normalized
     normalize_tool_name(raw_name)
-    assert any("exceeds custom (50) limit of 50 chars" in r.message for r in caplog.records), \
+    assert any("exceeds custom limit of 50 chars" in r.message for r in caplog.records), \
         "Expected warning log for custom limit truncation"
 
 def test_absurdly_long_path():
@@ -193,14 +193,14 @@ def test_final_length_log(monkeypatch, caplog):
     raw_name = LONG_RAW_NAME
     expected_name = "post_services_by_serviceid_custom_domains_by_customdomainidornam" # Corrected expected name (Truncated to 64)
     normalize_tool_name(raw_name)
-    assert any(f"Final tool name: {expected_name}, length: 64" in r.message for r in caplog.records), \
+    assert any("Final tool name registered, length: 64" in r.message for r in caplog.records), \
         f"Expected INFO log for final tool name length (64). Log Records: {[r.message for r in caplog.records]}"
 
     caplog.clear()
     monkeypatch.setenv("TOOL_NAME_MAX_LENGTH", "50")
     expected_name_50 = "post_services_by_serviceid_custom_domains_by_custo" # Corrected expected name (Truncated to 50)
     normalize_tool_name(raw_name)
-    assert any(f"Final tool name: {expected_name_50}, length: 50" in r.message for r in caplog.records), \
+    assert any("Final tool name registered, length: 50" in r.message for r in caplog.records), \
         f"Expected INFO log for final tool name length (50). Log Records: {[r.message for r in caplog.records]}"
 
 
