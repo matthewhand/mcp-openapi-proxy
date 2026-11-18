@@ -11,14 +11,17 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
 from mcp_openapi_proxy.protocol import (
     HEADER_SESSION_ID,
+    HEALTHZ_PATH,
     modern_headers,
     modern_request_meta,
 )
@@ -26,7 +29,6 @@ from mcp_openapi_proxy.protocol import (
 SPEC = {
     "openapi": "3.0.0",
     "info": {"title": "rr-test", "version": "1.0.0"},
-    "servers": [{"url": "http://example.test"}],
     "paths": {
         "/ping": {
             "get": {
@@ -73,21 +75,44 @@ def _wait_ready(url: str, timeout=20.0):
     last = None
     while time.monotonic() < deadline:
         try:
-            status, payload, _ = _rpc(url, "tools/list", rpc_id=0)
-            if status == 200 and "result" in payload:
-                return payload
-        except Exception as exc:
+            with urllib.request.urlopen(url, timeout=1) as resp:
+                if resp.status == 200:
+                    return
+        except (urllib.error.URLError, TimeoutError) as exc:
             last = exc
-            time.sleep(0.2)
+        time.sleep(0.2)
     raise TimeoutError(f"server at {url} not ready: {last}")
 
 
+class PingHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/ping":
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"pong")
+
+
 @pytest.fixture
-def two_http_servers(tmp_path):
+def ping_upstream():
+    with HTTPServer(("127.0.0.1", 0), PingHandler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}"
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+@pytest.fixture
+def two_http_servers(tmp_path, ping_upstream):
     spec_path = tmp_path / "spec.json"
-    spec_path.write_text(json.dumps(SPEC))
+    spec_path.write_text(json.dumps({**SPEC, "servers": [{"url": ping_upstream}]}))
     procs = []
-    urls = []
+    base_urls = []
     repo = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     try:
         for _ in range(2):
@@ -95,6 +120,7 @@ def two_http_servers(tmp_path):
             env = dict(os.environ)
             env.update({
                 "OPENAPI_SPEC_URL": spec_path.as_uri(),
+                "SERVER_URL_OVERRIDE": "",
                 "MCP_TRANSPORT": "streamable-http",
                 "MCP_HOST": "127.0.0.1",
                 "MCP_PORT": str(port),
@@ -111,20 +137,21 @@ def two_http_servers(tmp_path):
                 stderr=subprocess.PIPE,
             )
             procs.append(proc)
-            urls.append(f"http://127.0.0.1:{port}/mcp")
-        for url in urls:
-            _wait_ready(url)
-        yield urls
+            base_urls.append(f"http://127.0.0.1:{port}")
+        for url in base_urls:
+            _wait_ready(f"{url}{HEALTHZ_PATH}")
+        yield [f"{url}/mcp" for url in base_urls]
     finally:
         for proc in procs:
             proc.terminate()
             try:
                 proc.wait(timeout=5)
-            except Exception:
+            except subprocess.TimeoutExpired:
                 proc.kill()
+                proc.wait()
 
 
-def test_round_robin_list_then_call(two_http_servers, monkeypatch):
+def test_round_robin_list_then_call(two_http_servers):
     """Instance A lists tools; instance B calls one. No session header."""
     url_a, url_b = two_http_servers
     status, listed, headers_a = _rpc(url_a, "tools/list", rpc_id=1)
@@ -134,7 +161,7 @@ def test_round_robin_list_then_call(two_http_servers, monkeypatch):
     assert tools
     name = tools[0]["name"]
 
-    # Alternate: even retries go to B, the instance that never saw the list.
+    # Call instance B before sending it any tools/list requests.
     status, called, headers_b = _rpc(
         url_b,
         "tools/call",
@@ -144,13 +171,9 @@ def test_round_robin_list_then_call(two_http_servers, monkeypatch):
     )
     assert status == 200, called
     assert HEADER_SESSION_ID.lower() not in headers_b
-    # Upstream example.test is not up; a protocol-level result or tool error
-    # is success. A session/handshake error is not.
-    err = called.get("error")
-    if err:
-        msg = json.dumps(err).lower()
-        assert "initialize" not in msg
-        assert "session" not in msg
+    result = called["result"]
+    assert not result.get("isError"), result
+    assert result["content"] == [{"type": "text", "text": "pong"}]
 
 
 def test_round_robin_retries_same_id(two_http_servers):
